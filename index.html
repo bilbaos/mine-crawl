@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mine-Crawl: Tactical Defuser</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- ================================================================
+       EKRAN TYTUŁOWY
+  ================================================================ -->
+  <div id="screen-title" class="screen active">
+    <div class="title-border">
+      <div class="corner-deco tl"></div>
+      <div class="corner-deco tr"></div>
+      <div class="corner-deco bl"></div>
+      <div class="corner-deco br"></div>
+      <div class="title-enemies">☠ ⚔ ♦ ⚔ ☠</div>
+      <div class="title-logo">MINE-CRAWL</div>
+      <div class="title-sub">TACTICAL DEFUSER</div>
+      <div style="height:1px;width:100%;background:linear-gradient(90deg,transparent,var(--c-gold),transparent);opacity:0.4;margin:6px 0;"></div>
+      <div class="title-info">Zejdź w głąb Matrycy Cieni.<br>Neutralizuj zagrożenia. Przeżyj.</div>
+      <button class="btn-main" onclick="startGame('campaign')">▶ KAMPANIA</button>
+      <button class="btn-main secondary" onclick="startGame('endless')">∞ TRYB NIESKOŃCZONY</button>
+      <div class="title-info" style="font-size:11px;color:#333355;margin-top:8px;">
+        LPM: odkryj pole &nbsp;|&nbsp; PPM: Znak Słabości<br>
+        [1] Znak &nbsp;[2] Echokacja &nbsp;[3] Dezintegracja
+      </div>
+    </div>
+  </div>
+
+  <!-- ================================================================
+       BEZPIECZNY WĘZEŁ (meta-progresja między sektorami)
+  ================================================================ -->
+  <div id="screen-node" class="screen">
+    <div class="node-title">⬡ BEZPIECZNY WĘZEŁ ⬡</div>
+    <div class="node-panel">
+      <div class="corner-deco tl" style="border-color:#2a6a2a;"></div>
+      <div class="corner-deco tr" style="border-color:#2a6a2a;"></div>
+      <div class="corner-deco bl" style="border-color:#2a6a2a;"></div>
+      <div class="corner-deco br" style="border-color:#2a6a2a;"></div>
+      <div class="node-runes-row">Ξ Δ Ω Σ Φ Ψ Ξ Δ Ω Σ Φ Ψ Ξ Δ Ω Σ Φ Ψ</div>
+
+      <!-- Zasoby gracza -->
+      <div class="node-resources">
+        <div class="node-resource">
+          <span class="icon">💀</span>
+          <div>
+            <div style="font-size:12px;color:#888;">Sektor</div>
+            <div class="val" id="node-sector">-</div>
+          </div>
+        </div>
+        <div class="node-resource">
+          <span class="icon">💛</span>
+          <div>
+            <div style="font-size:12px;color:#888;">Złote Runy</div>
+            <div class="val" id="node-runes">0</div>
+          </div>
+        </div>
+        <div class="node-resource">
+          <span class="icon">⭐</span>
+          <div>
+            <div style="font-size:12px;color:#888;">Poziom</div>
+            <div class="val" id="node-level">1</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sklepy ulepszenia -->
+      <div class="node-shops">
+        <div class="node-shop" id="shop-atk">
+          <div class="icon-big">⚔</div>
+          <h3>STACJA DEFUZERÓW</h3>
+          <p>+1 ATK bazowy na starcie</p>
+          <div class="cost" id="shop-atk-cost">50 ✦</div>
+          <button class="node-btn" id="btn-buy-atk" onclick="buyUpgrade('atk')">KUP</button>
+        </div>
+        <div class="node-shop" id="shop-hp">
+          <div class="icon-big">🧪</div>
+          <h3>SYNTEZATOR ALCHEMICZNY</h3>
+          <p>Lepsze mikstury (+2 HP)</p>
+          <div class="cost" id="shop-hp-cost">40 ✦</div>
+          <button class="node-btn" id="btn-buy-hp" onclick="buyUpgrade('hp')">KUP</button>
+        </div>
+        <div class="node-shop" id="shop-arch">
+          <div class="icon-big">📖</div>
+          <h3>ARCHIWUM MATRYCY</h3>
+          <p>Wrogowie drop +5 EXP</p>
+          <div class="cost" id="shop-arch-cost">30 ✦</div>
+          <button class="node-btn" id="btn-buy-arch" onclick="buyUpgrade('arch')">KUP</button>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:10px;">
+        <button class="node-btn" style="color:#66bb6a;border-color:#2a6a2a;" onclick="continueFromNode()">▶ WEJDŹ DO SEKTORA</button>
+        <button class="node-btn" style="color:#888;border-color:#333;" onclick="showTitle()">↩ MENU</button>
+      </div>
+      <div id="node-msg" style="font-size:14px;color:#66bb6a;text-align:center;min-height:18px;"></div>
+    </div>
+  </div>
+
+  <!-- ================================================================
+       EKRAN GRY
+  ================================================================ -->
+  <div id="screen-game" class="screen">
+
+    <!-- HUD górny -->
+    <div id="hud">
+      <div class="portrait" id="portrait">🧙</div>
+
+      <div class="hud-stat" style="flex-direction:column;gap:2px;">
+        <div class="hud-label">HP</div>
+        <div class="hearts-row" id="hearts-row"></div>
+      </div>
+
+      <div class="hud-stat" style="flex-direction:column;gap:2px;">
+        <div class="hud-label">ATK</div>
+        <div style="display:flex;align-items:center;gap:4px;">
+          <span style="font-size:16px;">⚔</span>
+          <span class="atk-val" id="atk-val">1</span>
+        </div>
+      </div>
+
+      <div class="hud-stat" style="flex-direction:column;gap:2px;">
+        <div class="hud-label">MP</div>
+        <div class="crystals-row" id="crystals-row"></div>
+      </div>
+
+      <div class="exp-bar-wrap">
+        <div class="hud-label">EXP <span id="exp-label" style="color:#66bb6a44;"></span></div>
+        <div class="exp-bar-bg">
+          <div class="exp-bar-fill" id="exp-bar" style="width:0%"></div>
+        </div>
+      </div>
+
+      <div class="hud-sector" id="hud-sector">
+        SEKTOR 1<br>
+        <span style="color:#444466;font-size:6px;">MATRYCA CIENI</span>
+      </div>
+    </div>
+
+    <!-- Obszar gry: siatka + panel boczny -->
+    <div id="game-area">
+
+      <!-- Siatka kafelków -->
+      <div id="grid-wrap">
+        <div id="grid-container">
+          <div id="grid"></div>
+        </div>
+      </div>
+
+      <!-- Panel boczny: zaklęcia, inwentarz, log -->
+      <div id="side-panel">
+        <div class="panel-section">
+          <div class="panel-title">ZAKLĘCIA</div>
+
+          <button class="spell-btn" id="sb-flag" onclick="setSpell('flag')">
+            <span class="spell-icon" style="color:var(--c-flag)">⚑</span>
+            <span class="spell-info">
+              <span class="spell-name">Znak Słabości</span>
+              <span class="spell-cost">1 MP</span>
+            </span>
+            <span class="spell-key">PPM/1</span>
+          </button>
+
+          <button class="spell-btn" id="sb-echo" onclick="setSpell('echo')">
+            <span class="spell-icon" style="color:var(--c-echo)">👁</span>
+            <span class="spell-info">
+              <span class="spell-name">Echokacja</span>
+              <span class="spell-cost">2 MP</span>
+            </span>
+            <span class="spell-key">2</span>
+          </button>
+
+          <button class="spell-btn" id="sb-dezint" onclick="setSpell('dezint')">
+            <span class="spell-icon" style="color:var(--c-dezint)">💥</span>
+            <span class="spell-info">
+              <span class="spell-name">Dezintegracja</span>
+              <span class="spell-cost">4 MP</span>
+            </span>
+            <span class="spell-key">3</span>
+          </button>
+        </div>
+
+        <div class="panel-section">
+          <div class="panel-title">INWENTARZ</div>
+          <div class="inv-grid" id="inv-grid"></div>
+        </div>
+
+        <div class="panel-section" style="padding-bottom:4px;">
+          <div class="panel-title">LOG WALKI</div>
+        </div>
+        <div id="combat-log"></div>
+      </div>
+
+    </div><!-- /game-area -->
+
+    <!-- Pasek zaklęć dolny -->
+    <div id="spell-bar">
+      <button class="spell-bar-btn" id="sbb-flag" onclick="setSpell('flag')">
+        <span class="sbb-icon" style="color:var(--c-flag)">⚑</span>
+        <span class="sbb-name">Znak</span>
+        <span class="sbb-cost">1MP</span>
+        <span class="sbb-key">PPM</span>
+      </button>
+      <button class="spell-bar-btn" id="sbb-echo" onclick="setSpell('echo')">
+        <span class="sbb-icon" style="color:var(--c-echo)">👁</span>
+        <span class="sbb-name">Echokacja</span>
+        <span class="sbb-cost">2MP</span>
+        <span class="sbb-key">2</span>
+      </button>
+      <button class="spell-bar-btn" id="sbb-dezint" onclick="setSpell('dezint')">
+        <span class="sbb-icon" style="color:var(--c-dezint)">💥</span>
+        <span class="sbb-name">Dezint.</span>
+        <span class="sbb-cost">4MP</span>
+        <span class="sbb-key">3</span>
+      </button>
+      <div class="bar-sep"></div>
+      <div class="bar-hint" id="bar-hint">LPM: odkryj &nbsp;|&nbsp; PPM: Znak Słabości</div>
+    </div>
+
+  </div><!-- /screen-game -->
+
+  <!-- ================================================================
+       EKRAN ŚMIERCI
+  ================================================================ -->
+  <div id="screen-death" class="screen">
+    <div class="death-title">☠ PADŁEŚ ☠</div>
+    <div class="death-stats">
+      <div class="death-stat"><span>Sektor:</span>      <span id="ds-sector">-</span></div>
+      <div class="death-stat"><span>Poziom:</span>      <span id="ds-level">-</span></div>
+      <div class="death-stat"><span>ATK:</span>         <span id="ds-atk">-</span></div>
+      <div class="death-stat"><span>Zebrane EXP:</span> <span id="ds-exp">-</span></div>
+      <div class="death-stat"><span>Złote Runy:</span>  <span id="ds-runes">-</span></div>
+    </div>
+    <button class="btn-main" onclick="showNode()">→ BEZPIECZNY WĘZEŁ</button>
+    <button class="btn-main secondary" onclick="showTitle()">↩ MENU GŁÓWNE</button>
+  </div>
+
+  <!-- ================================================================
+       EKRAN ZWYCIĘSTWA
+  ================================================================ -->
+  <div id="screen-win" class="screen">
+    <div class="win-title">✦ MATRYCA ZNEUTRALIZOWANA ✦</div>
+    <div style="font-size:16px;color:#888;text-align:center;">
+      Arch-Golem Matrycy pokonany!<br>Wymiar ocalony.
+    </div>
+    <div class="death-stats" style="border-color:#2a4a2a;background:#0d1a10;">
+      <div class="death-stat"><span>Sektory ukończone:</span> <span id="ws-sectors" style="color:var(--c-gold2);">-</span></div>
+      <div class="death-stat"><span>Końcowy poziom:</span>    <span id="ws-level"   style="color:var(--c-gold2);">-</span></div>
+      <div class="death-stat"><span>Złote Runy:</span>        <span id="ws-runes"   style="color:var(--c-gold2);">-</span></div>
+    </div>
+    <button class="btn-main" onclick="showTitle()">↩ MENU GŁÓWNE</button>
+  </div>
+
+  <!-- ================================================================
+       NAKŁADKI
+  ================================================================ -->
+  <div id="overlay-msg"></div>
+  <div id="tooltip"></div>
+
+  <script src="game.js"></script>
+</body>
+</html>
