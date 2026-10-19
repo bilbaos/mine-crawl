@@ -524,6 +524,8 @@ function revealCell(idx, userTriggered) {
     // Remove enemy content (field now empty)
     c.content = CONTENT_EMPTY;
     c.enemy = null;
+    computeNumbers(); // <--- DODANA LINIA (przelicza wartości ponownie)
+    updateAllCells(); // <--- DODANA LINIA (odświeża cyfry na ekranie)
     renderHUD();
 
     if (G.hp <= 0) { setTimeout(()=>playerDied(), 300); return; }
