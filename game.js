@@ -442,9 +442,8 @@ function onCellRightClick(e) {
 }
 
 function ensureSafeStart(idx) {
-  // If first click hits an enemy, move it
+  // jesli pierwsze klikniecie trafia we wroga, przenosimy go
   if (G.cells[idx].content === CONTENT_ENEMY) {
-    // Find a safe cell to swap
     for (let i = 0; i < G.cells.length; i++) {
       if (G.cells[i].content === CONTENT_EMPTY && i !== idx &&
           G.cells[i].item !== 'key' && G.cells[i].item !== 'hatch') {
@@ -457,7 +456,8 @@ function ensureSafeStart(idx) {
       }
     }
   }
-  // Also clear safe zone 3x3
+
+  // czyszczenie bezpiecznej strefy 3x3
   const r0 = Math.floor(idx / G.cols);
   const c0 = idx % G.cols;
   for (let dr=-1;dr<=1;dr++) for (let dc=-1;dc<=1;dc++) {
@@ -476,6 +476,57 @@ function ensureSafeStart(idx) {
           break;
         }
       }
+    }
+  }
+
+  // przeniesienie wlazu i klucza z dala od strefy startowej
+  relocateObjectivesFromStart(idx);
+}
+
+function relocateObjectivesFromStart(startIdx) {
+  const sr = Math.floor(startIdx / G.cols);
+  const sc = startIdx % G.cols;
+
+  const distFromStart = (i) => {
+    const r = Math.floor(i / G.cols);
+    const c = i % G.cols;
+    return Math.abs(r - sr) + Math.abs(c - sc);
+  };
+
+  // szukamy bezpiecznych zakrytych pol daleko od startu
+  const candidates = [];
+  for (let i = 0; i < G.cells.length; i++) {
+    const cell = G.cells[i];
+    if (cell.content === CONTENT_EMPTY && cell.state === CELL_COVERED && !isNearIdx(i, startIdx, 2)) {
+      candidates.push(i);
+    }
+  }
+
+  if (candidates.length < 2) return;
+
+  // priorytet dla pol sasiadujacych z wrogami (number > 0), aby kaskada 0 ich nie odslonila
+  const guarded = candidates.filter(i => G.cells[i].number > 0 && !G.cells[i].item);
+  const pool = guarded.length >= 2 ? guarded : candidates.filter(i => !G.cells[i].item);
+
+  if (pool.length === 0) return;
+
+  // sortujemy malejaco po odleglosci od klikniecia startowego
+  pool.sort((a, b) => distFromStart(b) - distFromStart(a));
+
+  // przenosimy wlaz na najdalsze chronione pole
+  const newHatch = pool[0];
+  if (G.hatchCell !== -1) G.cells[G.hatchCell].item = null;
+  G.hatchCell = newHatch;
+  G.cells[G.hatchCell].item = 'hatch';
+
+  // jesli klucz byl blisko startu lub na polu 0, tez przenosimy go w inne odlegle miejsce
+  if (isNearIdx(G.keyCell, startIdx, 2) || G.cells[G.keyCell].number === 0) {
+    const keyPool = pool.filter(i => i !== newHatch);
+    if (keyPool.length > 0) {
+      const pick = keyPool[Math.floor(Math.random() * Math.min(4, keyPool.length))];
+      if (G.keyCell !== -1) G.cells[G.keyCell].item = null;
+      G.keyCell = pick;
+      G.cells[G.keyCell].item = 'key';
     }
   }
 }
@@ -587,7 +638,7 @@ function cascadeReveal(idx) {
       if (visited.has(ni)) continue;
       visited.add(ni);
       const c2 = G.cells[ni];
-      if (c2.state===CELL_REVEALED || c2.content===CONTENT_ENEMY) continue;
+      if (c2.state===CELL_REVEALED || c2.content===CONTENT_ENEMY || c2.item==='hatch') continue;
       c2.state = CELL_REVEALED;
       c2.echoed = false;
       c2.flagged = false;
