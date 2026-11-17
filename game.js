@@ -28,26 +28,26 @@ const G = {
   hasShield: false,
 };
 
-// Sector configs [cols, rows, density, newEnemies]
+// konfiguracja sektorow z wagami pojawiania sie przeciwnikow
 const SECTORS = [
-  [8, 8, 0.15, ['slime']],
-  [10, 10, 0.18, ['slime','guardian']],
-  [12, 12, 0.20, ['slime','guardian','mimic']],
-  [14, 14, 0.22, ['slime','guardian','brutal','mimic']],
-  [12, 12, 0.25, ['slime','guardian','brutal','mimic']], // rest
-  [16, 16, 0.24, ['slime','guardian','brutal','specter','mimic']],
-  [18, 18, 0.26, ['slime','guardian','brutal','specter','mimic']],
-  [20, 20, 0.28, ['slime','guardian','brutal','specter','mimic']],
-  [22, 22, 0.30, ['slime','guardian','brutal','specter','mimic']],
-  [12, 12, 0.20, ['guardian','brutal','specter']], // boss sector
+  [8, 8, 0.16,   { slime: 10 }],
+  [10, 10, 0.19, { slime: 6, guardian: 4 }],
+  [12, 12, 0.21, { slime: 3, guardian: 5, mimic: 2 }],
+  [14, 14, 0.23, { guardian: 4, brutal: 4, mimic: 2 }],
+  [12, 12, 0.22, { slime: 3, guardian: 4, brutal: 2, mimic: 1 }], // sektor odpoczynkowy
+  [16, 16, 0.25, { guardian: 3, brutal: 4, specter: 2, mimic: 2 }],
+  [18, 18, 0.27, { guardian: 2, brutal: 4, specter: 3, mimic: 2 }],
+  [20, 20, 0.29, { brutal: 4, specter: 4, mimic: 2 }],
+  [22, 22, 0.31, { brutal: 3, specter: 5, mimic: 2 }],
+  [12, 12, 0.24, { brutal: 4, specter: 5, mimic: 1 }], // sektor finalowy
 ];
 
 const ENEMIES = {
-  slime:    { level:1, exp:4,  emoji:'🟢', name:'Szlam Wymiarowy' },
-  guardian: { level:2, exp:10, emoji:'🤖', name:'Spaczony Strażnik' },
-  brutal:   { level:function(s){ return s<=6?3:4; }, exp:20, emoji:'👹', name:'Brutal Matrycy' },
-  specter:  { level:function(s){ return Math.min(8, 4+Math.floor(s/3)); }, exp:40, emoji:'👻', name:'Widmo Przestrzenne' },
-  mimic:    { level:0, exp:30, emoji:'📦', name:'Skrzynia (Mimik)' },
+  slime:    { level:1, exp:5,  emoji:'🟢', name:'Szlam Wymiarowy' },
+  guardian: { level:function(s){ return s>=7?3:2; }, exp:10, emoji:'🤖', name:'Spaczony Strażnik' },
+  brutal:   { level:function(s){ return s<=5?3:(s<=8?4:5); }, exp:18, emoji:'👹', name:'Brutal Matrycy' },
+  specter:  { level:function(s){ return Math.min(9, 4 + Math.floor(s/2)); }, exp:32, emoji:'👻', name:'Widmo Przestrzenne' },
+  mimic:    { level:0, exp:22, emoji:'📦', name:'Skrzynia (Mimik)' },
 };
 
 const CELL_COVERED = 0, CELL_REVEALED = 1;
@@ -127,7 +127,7 @@ function startGame(mode) {
   G.hp = 3; G.maxHp = 3;
   G.atk = 1 + (G.meta.atk ? 1 : 0); G.baseAtk = G.atk;
   G.mp = 5; G.maxMp = 5;
-  G.exp = 0; G.expNext = 100;
+  G.exp = 0; G.expNext = 140;
   G.level = 1;
   G.runes = 0;
   G.hasShield = false;
@@ -169,6 +169,7 @@ function getCellDesc() {
 // =====================================================================
 // GRID GENERATION
 // =====================================================================
+
 function buildGrid(density, allowedTypes) {
   const n = G.cols * G.rows;
   G.cells = [];
@@ -194,7 +195,9 @@ function buildGrid(density, allowedTypes) {
   // Place enemies in first numEnemies positions
   for (let i = 0; i < numEnemies && i < positions.length; i++) {
     const pos = positions[i];
-    const type = allowedTypes[Math.floor(Math.random() * allowedTypes.length)];
+    const type = Array.isArray(allowedTypes)
+      ? allowedTypes[Math.floor(Math.random() * allowedTypes.length)]
+      : pickWeightedEnemy(allowedTypes);
     const eInfo = ENEMIES[type];
     const level = typeof eInfo.level === 'function' ? eInfo.level(G.sector) : eInfo.level;
     G.cells[pos].content = CONTENT_ENEMY;
@@ -220,6 +223,28 @@ function buildGrid(density, allowedTypes) {
   // Compute numbers
   computeNumbers();
   renderGrid();
+}
+
+function pickWeightedEnemy(weightsObj) {
+  const entries = Object.entries(weightsObj);
+  const total = entries.reduce((acc, [, w]) => acc + w, 0);
+  let roll = Math.random() * total;
+  for (const [type, weight] of entries) {
+    roll -= weight;
+    if (roll <= 0) return type;
+  }
+  return entries[0][0];
+}
+
+function pickWeightedEnemy(weightsObj) {
+  const entries = Object.entries(weightsObj);
+  const total = entries.reduce((acc, [, w]) => acc + w, 0);
+  let roll = Math.random() * total;
+  for (const [type, weight] of entries) {
+    roll -= weight;
+    if (roll <= 0) return type;
+  }
+  return entries[0][0];
 }
 
 function computeNumbers() {
@@ -540,13 +565,18 @@ function isNearIdx(i,j,dist) {
 function revealCell(idx, userTriggered) {
   const c = G.cells[idx];
   if (c.state === CELL_REVEALED) return;
+  const wasEchoed = c.echoed;
   c.state = CELL_REVEALED;
   c.echoed = false;
   c.flagged = false;
 
   if (c.content === CONTENT_ENEMY) {
-    // obliczanie obrazen i zapisanie danych wroga przed wyczyszczeniem pola
-    const dmg = Math.max(0, c.enemy.level - G.atk);
+    // mimik ma poziom 0 na runach, ale zaskakuje gracza przy kliknieciu bez echokacji
+    const isMimicAmbush = c.enemy.type === 'mimic' && !wasEchoed;
+    const dmg = isMimicAmbush
+      ? Math.max(1, Math.floor(G.sector / 4))
+      : Math.max(0, c.enemy.level - G.atk);
+
     const enemySnapshot = { ...c.enemy };
     let blockedByShield = false;
 
@@ -556,7 +586,11 @@ function revealCell(idx, userTriggered) {
       addLog('warn', `🛡 Tarcza pochłonęła atak ${enemySnapshot.name}!`);
     } else if (dmg > 0) {
       G.hp = Math.max(0, G.hp - dmg);
-      addLog('damage', `⚔ Walka: ${enemySnapshot.name} Lv.${enemySnapshot.level} — obrażenia: ${dmg} HP`);
+      if (isMimicAmbush) {
+        addLog('damage', `📦 Zasadzka Mimika! Otrzymujesz ${dmg} HP obrażeń!`);
+      } else {
+        addLog('damage', `⚔ Walka: ${enemySnapshot.name} Lv.${enemySnapshot.level} — obrażenia: ${dmg} HP`);
+      }
       const portrait = document.getElementById('portrait');
       portrait.classList.remove('pulse');
       void portrait.offsetWidth;
@@ -774,11 +808,12 @@ function gainExp(amount) {
 
 function levelUp() {
   G.level++;
-  G.expNext = Math.floor(G.expNext * 1.7);
+  G.expNext = Math.floor(G.expNext * 1.85);
   G.baseAtk++;
   G.atk = G.baseAtk;
-  G.hp = G.maxHp; // full heal
-  addLog('lvlup', `★ POZIOM ${G.level}! ATK +1, HP odnowione!`);
+  G.hp = Math.min(G.maxHp, G.hp + 1);
+  G.mp = Math.min(G.maxMp, G.mp + 1);
+  addLog('lvlup', `★ POZIOM ${G.level}! ATK +1, +1 HP, +1 MP!`);
   const portrait = document.getElementById('portrait');
   portrait.classList.remove('levelup');
   void portrait.offsetWidth;
