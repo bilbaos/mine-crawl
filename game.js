@@ -30,24 +30,24 @@ const G = {
 
 // konfiguracja sektorow z wagami pojawiania sie przeciwnikow
 const SECTORS = [
-  [8, 8, 0.16,   { slime: 10 }],
-  [10, 10, 0.19, { slime: 6, guardian: 4 }],
-  [12, 12, 0.21, { slime: 3, guardian: 5, mimic: 2 }],
-  [14, 14, 0.23, { guardian: 4, brutal: 4, mimic: 2 }],
-  [12, 12, 0.22, { slime: 3, guardian: 4, brutal: 2, mimic: 1 }], // sektor odpoczynkowy
-  [16, 16, 0.25, { guardian: 3, brutal: 4, specter: 2, mimic: 2 }],
-  [18, 18, 0.27, { guardian: 2, brutal: 4, specter: 3, mimic: 2 }],
-  [20, 20, 0.29, { brutal: 4, specter: 4, mimic: 2 }],
-  [22, 22, 0.31, { brutal: 3, specter: 5, mimic: 2 }],
-  [12, 12, 0.24, { brutal: 4, specter: 5, mimic: 1 }], // sektor finalowy
+  [8, 8, 0.22,   { slime: 8, guardian: 5, brutal: 1 }],
+  [10, 10, 0.21, { slime: 5, guardian: 5, brutal: 2, mimic: 1 }],
+  [12, 12, 0.22, { slime: 3, guardian: 5, brutal: 3, mimic: 2 }],
+  [14, 14, 0.24, { guardian: 4, brutal: 4, specter: 1, mimic: 2 }],
+  [12, 12, 0.22, { slime: 3, guardian: 4, brutal: 3, mimic: 1 }], // sektor odpoczynkowy
+  [16, 16, 0.25, { guardian: 3, brutal: 4, specter: 3, mimic: 2 }],
+  [18, 18, 0.27, { guardian: 2, brutal: 4, specter: 4, mimic: 2 }],
+  [20, 20, 0.29, { brutal: 4, specter: 5, mimic: 2 }],
+  [22, 22, 0.31, { brutal: 3, specter: 6, mimic: 2 }],
+  [12, 12, 0.25, { brutal: 4, specter: 6, mimic: 1 }], // sektor finalowy
 ];
 
 const ENEMIES = {
-  slime:    { level:1, exp:5,  emoji:'🟢', name:'Szlam Wymiarowy' },
-  guardian: { level:function(s){ return s>=7?3:2; }, exp:10, emoji:'🤖', name:'Spaczony Strażnik' },
-  brutal:   { level:function(s){ return s<=5?3:(s<=8?4:5); }, exp:18, emoji:'👹', name:'Brutal Matrycy' },
-  specter:  { level:function(s){ return Math.min(9, 4 + Math.floor(s/2)); }, exp:32, emoji:'👻', name:'Widmo Przestrzenne' },
-  mimic:    { level:0, exp:22, emoji:'📦', name:'Skrzynia (Mimik)' },
+  slime:    { level:1, exp:11, emoji:'🟢', name:'Szlam Wymiarowy' },
+  guardian: { level:function(s){ return s>=6?3:2; }, exp:16, emoji:'🤖', name:'Spaczony Strażnik' },
+  brutal:   { level:function(s){ return s<=4?3:(s<=7?4:5); }, exp:26, emoji:'👹', name:'Brutal Matrycy' },
+  specter:  { level:function(s){ return Math.min(9, 4 + Math.floor(s/2)); }, exp:38, emoji:'👻', name:'Widmo Przestrzenne' },
+  mimic:    { level:0, exp:24, emoji:'📦', name:'Skrzynia (Mimik)' },
 };
 
 const CELL_COVERED = 0, CELL_REVEALED = 1;
@@ -127,7 +127,7 @@ function startGame(mode) {
   G.hp = 3; G.maxHp = 3;
   G.atk = 1 + (G.meta.atk ? 1 : 0); G.baseAtk = G.atk;
   G.mp = 5; G.maxMp = 5;
-  G.exp = 0; G.expNext = 140;
+  G.exp = 0; G.expNext = 75;
   G.level = 1;
   G.runes = 0;
   G.hasShield = false;
@@ -175,11 +175,9 @@ function buildGrid(density, allowedTypes) {
   G.cells = [];
 
   // 1. Place enemies
-  const numEnemies = Math.floor(n * density);
+  const numEnemies = G.sector === 1 ? 14 : Math.floor(n * density);
   const positions = shuffle(Array.from({length: n}, (_,i)=>i));
 
-  // Reserve safe zone: we'll place safe cells later (first click guarantee)
-  // For now, fill with empty
   for (let i = 0; i < n; i++) {
     G.cells.push({
       state: CELL_COVERED,
@@ -192,12 +190,18 @@ function buildGrid(density, allowedTypes) {
     });
   }
 
-  // Place enemies in first numEnemies positions
+  // w sektorze 1 gwarantujemy dokladny balans: 8 szlamow, 5 straznikow, 1 brutal
+  const sector1Roster = G.sector === 1
+    ? shuffle(['slime','slime','slime','slime','slime','slime','slime','slime','guardian','guardian','guardian','guardian','guardian','brutal'])
+    : null;
+
   for (let i = 0; i < numEnemies && i < positions.length; i++) {
     const pos = positions[i];
-    const type = Array.isArray(allowedTypes)
-      ? allowedTypes[Math.floor(Math.random() * allowedTypes.length)]
-      : pickWeightedEnemy(allowedTypes);
+    const type = sector1Roster
+      ? sector1Roster[i]
+      : (Array.isArray(allowedTypes)
+          ? allowedTypes[Math.floor(Math.random() * allowedTypes.length)]
+          : pickWeightedEnemy(allowedTypes));
     const eInfo = ENEMIES[type];
     const level = typeof eInfo.level === 'function' ? eInfo.level(G.sector) : eInfo.level;
     G.cells[pos].content = CONTENT_ENEMY;
@@ -834,7 +838,7 @@ function gainExp(amount) {
 
 function levelUp() {
   G.level++;
-  G.expNext = Math.floor(G.expNext * 1.85);
+  G.expNext = Math.floor(G.expNext * 1.8);
   G.baseAtk++;
   G.atk = G.baseAtk;
   G.hp = Math.min(G.maxHp, G.hp + 1);
