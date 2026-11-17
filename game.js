@@ -622,15 +622,17 @@ function revealCell(idx, userTriggered) {
   checkSectorComplete();
 }
 
-function playCombatAnimation(idx, enemy, dmg) {
+function playCombatAnimation(idx, enemy, dmg, blockedByShield = false) {
   const el = document.querySelector(`.cell[data-idx="${idx}"]`);
   const gridContainer = document.getElementById('grid-container');
+  const type = enemy.type || 'slime';
+  const isHeavy = dmg >= 2 || enemy.level >= 4;
 
   if (gridContainer) {
-    gridContainer.classList.remove('flash-damage', 'combat-shake-light', 'combat-shake-heavy');
+    gridContainer.classList.remove('flash-damage', 'combat-shake-light', 'combat-shake-heavy', 'combat-shake-brutal');
     void gridContainer.offsetWidth;
-    if (dmg > 0) {
-      gridContainer.classList.add('flash-damage', 'combat-shake-heavy');
+    if (dmg > 0 && !blockedByShield) {
+      gridContainer.classList.add('flash-damage', isHeavy ? 'combat-shake-brutal' : 'combat-shake-heavy');
     } else {
       gridContainer.classList.add('combat-shake-light');
     }
@@ -638,20 +640,44 @@ function playCombatAnimation(idx, enemy, dmg) {
 
   if (!el) return;
 
-  // animacja uderzenia na samym kafelku
-  el.classList.remove('combat-hit', 'combat-kill');
+  // czyszczenie poprzednich klas animacji kafelka
+  const animClasses = [
+    'combat-hit', 'combat-kill',
+    'anim-slime', 'anim-guardian', 'anim-brutal', 'anim-specter', 'anim-mimic'
+  ];
+  el.classList.remove(...animClasses);
   void el.offsetWidth;
-  el.classList.add(dmg > 0 ? 'combat-hit' : 'combat-kill');
 
-  // chwilowe pokazanie ikony potwora i ciecia mieczem
+  // przypisanie unikalnej klasy dla typu przeciwnika oraz wyniku starcia
+  el.classList.add(`anim-${type}`, dmg > 0 && !blockedByShield ? 'combat-hit' : 'combat-kill');
+
+  // fala uderzeniowa dla silniejszych przeciwnikow (poziom 3+ lub obrazenia > 0)
+  if (enemy.level >= 3 || dmg > 0) {
+    const ring = document.createElement('div');
+    ring.className = `combat-ring ring-${type}`;
+    el.appendChild(ring);
+    setTimeout(() => ring.remove(), 500);
+  }
+
+  // ikona efektu dopasowana do typu przeciwnika
+  const effectIcons = {
+    slime: '💧',
+    guardian: '⚡',
+    brutal: '🔥',
+    specter: '🌀',
+    mimic: dmg > 0 ? '💢' : '🔓'
+  };
+
   const slash = document.createElement('div');
-  slash.className = 'combat-slash';
-  slash.textContent = dmg > 0 ? '💥' : '⚔';
+  slash.className = `combat-slash slash-${type}`;
+  slash.textContent = blockedByShield ? '🛡' : (effectIcons[type] || '⚔');
   el.appendChild(slash);
-  setTimeout(() => slash.remove(), 450);
+  setTimeout(() => slash.remove(), 500);
 
   // unoszacy sie tekst nad kafelkiem
-  if (dmg > 0) {
+  if (blockedByShield) {
+    spawnParticle(el, '🛡 -0 HP', '#4fc3f7');
+  } else if (dmg > 0) {
     spawnParticle(el, `-${dmg} HP`, '#ff5252');
   } else {
     spawnParticle(el, `⚔ +${enemy.exp} EXP`, '#66bb6a');

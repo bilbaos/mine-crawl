@@ -47,11 +47,11 @@ body {
   justify-content: center;
 }
 
-/* ========== SCREENS ========== */
+/* SCREENS */
 .screen { display: none; width: 100%; height: 100%; position: absolute; top:0; left:0; }
 .screen.active { display: flex; flex-direction: column; align-items: center; justify-content: center; }
 
-/* ========== TITLE SCREEN ========== */
+/* TITLE SCREEN */
 #screen-title {
   background: radial-gradient(ellipse at center, #1a1030 0%, #0d0d1a 70%);
   gap: 20px;
@@ -144,7 +144,7 @@ body {
   line-height: 1.6;
 }
 
-/* ========== NODE SCREEN (between runs) ========== */
+/* NODE SCREEN (between runs) */
 #screen-node {
   background: radial-gradient(ellipse at center, #0d1a10 0%, #0d0d1a 70%);
   gap: 16px;
@@ -235,7 +235,7 @@ body {
 .node-btn:hover { background: #142014; border-color: #66bb6a; }
 .node-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-/* ========== GAME SCREEN ========== */
+/* GAME SCREEN */
 #screen-game {
   background: var(--c-bg);
   flex-direction: column;
@@ -629,7 +629,7 @@ body.spell-dezint .cell.covered { cursor: url("data:image/svg+xml,%3Csvg xmlns='
   line-height: 1.5;
 }
 
-/* ========== DEATH SCREEN ========== */
+/* DEATH SCREEN */
 #screen-death {
   background: radial-gradient(ellipse at center, #1a0d0d 0%, #0d0d1a 70%);
   gap: 20px;
@@ -653,7 +653,7 @@ body.spell-dezint .cell.covered { cursor: url("data:image/svg+xml,%3Csvg xmlns='
 .death-stat { display: flex; justify-content: space-between; font-size: 18px; color: #998; }
 .death-stat span:last-child { color: var(--c-gold2); }
 
-/* ========== WIN SCREEN ========== */
+/* WIN SCREEN */
 #screen-win {
   background: radial-gradient(ellipse at center, #0d1a1a 0%, #0d0d1a 70%);
   gap: 20px;
@@ -667,7 +667,7 @@ body.spell-dezint .cell.covered { cursor: url("data:image/svg+xml,%3Csvg xmlns='
   text-align: center;
 }
 
-/* ========== OVERLAY / TOOLTIPS ========== */
+/* OVERLAY / TOOLTIPS */
 #overlay-msg {
   position: fixed;
   top: 50%;
@@ -743,13 +743,17 @@ body.spell-dezint .cell.covered { cursor: url("data:image/svg+xml,%3Csvg xmlns='
   white-space: nowrap;
 }
 
-/* wstrzas planszy przy walce */
+/* wstrzasy planszy zalezne od sily przeciwnika */
 #grid-container.combat-shake-light {
   animation: shakeLight 0.25s ease;
 }
 
 #grid-container.combat-shake-heavy {
   animation: shakeHeavy 0.38s ease;
+}
+
+#grid-container.combat-shake-brutal {
+  animation: shakeBrutal 0.48s ease;
 }
 
 @keyframes shakeLight {
@@ -767,26 +771,94 @@ body.spell-dezint .cell.covered { cursor: url("data:image/svg+xml,%3Csvg xmlns='
   80% { transform: translate(4px, 2px); }
 }
 
-/* rozblysk kafelka przy walce */
-.cell.combat-kill {
-  animation: cellKillFlash 0.45s ease;
+@keyframes shakeBrutal {
+  0%, 100% { transform: translate(0, 0) scale(1); filter: none; }
+  15% { transform: translate(-8px, 5px) scale(0.99); filter: brightness(0.6) sepia(1) hue-rotate(-40deg) saturate(5); }
+  30% { transform: translate(8px, -5px) scale(1.01); }
+  45% { transform: translate(-6px, -4px); }
+  60% { transform: translate(6px, 4px); }
+  80% { transform: translate(-3px, 2px); }
 }
 
-.cell.combat-hit {
-  animation: cellHitFlash 0.5s ease;
+/* 1. Szlam (poziom 1) - zielone rozprysniecie i sprezyste odksztalcenie */
+.cell.anim-slime {
+  animation: animSlime 0.45s ease;
 }
 
-@keyframes cellKillFlash {
-  0% { background: #2e7d32; box-shadow: 0 0 16px #66bb6a; transform: scale(1.12); }
+@keyframes animSlime {
+  0% { background: #1b5e20; box-shadow: 0 0 14px #66bb6a; transform: scale(1.25, 0.8); }
+  45% { background: #2e7d32; transform: scale(0.92, 1.12); }
+  100% { background: var(--c-revealed); box-shadow: none; transform: scale(1, 1); }
+}
+
+/* 2. Straznik (poziom 2-3) - elektryczne wyladowanie i szybka wibracja */
+.cell.anim-guardian {
+  animation: animGuardian 0.45s ease;
+}
+
+@keyframes animGuardian {
+  0% { background: #01579b; box-shadow: 0 0 18px #4fc3f7; transform: translateX(-3px); }
+  25% { background: #0288d1; transform: translateX(3px); }
+  50% { background: #01579b; transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+  100% { background: var(--c-revealed); box-shadow: none; transform: translateX(0); }
+}
+
+/* 3. Brutal (poziom 3-5) - ciezkie ognistokarmazynowe uderzenie */
+.cell.anim-brutal {
+  animation: animBrutal 0.55s ease;
+}
+
+@keyframes animBrutal {
+  0% { background: #b71c1c; box-shadow: 0 0 24px #ff8f00, inset 0 0 12px #ff5252; transform: scale(1.32); }
+  40% { background: #e65100; transform: scale(0.95); }
   100% { background: var(--c-revealed); box-shadow: none; transform: scale(1); }
 }
 
-@keyframes cellHitFlash {
-  0% { background: #b71c1c; box-shadow: 0 0 20px #ff1744; transform: scale(1.15); }
-  100% { background: var(--c-revealed); box-shadow: none; transform: scale(1); }
+/* 4. Widmo (poziom 4-9) - fioletowe znieksztalcenie pustki */
+.cell.anim-specter {
+  animation: animSpecter 0.6s ease;
 }
 
-/* ikona ciecia na kafelku */
+@keyframes animSpecter {
+  0% { background: #4a148c; box-shadow: 0 0 26px #ab47bc; transform: scale(1.2) rotate(6deg); filter: brightness(1.6); }
+  50% { background: #311b92; transform: scale(1.05) rotate(-4deg); }
+  100% { background: var(--c-revealed); box-shadow: none; transform: scale(1) rotate(0deg); filter: none; }
+}
+
+/* 5. Mimik (zasadzka) - ostre pomaranczowo-czerwone klapniecie */
+.cell.anim-mimic {
+  animation: animMimic 0.5s ease;
+}
+
+@keyframes animMimic {
+  0% { background: #bf360c; box-shadow: 0 0 22px #ff5722; transform: scale(1.28) rotate(-8deg); }
+  35% { background: #d84315; transform: scale(0.9) rotate(5deg); }
+  100% { background: var(--c-revealed); box-shadow: none; transform: scale(1) rotate(0deg); }
+}
+
+/* fala uderzeniowa rozchodzaca sie z kafelka */
+.combat-ring {
+  position: absolute;
+  inset: -2px;
+  border: 2px solid #fff;
+  pointer-events: none;
+  z-index: 9;
+  animation: ringExpand 0.5s ease-out forwards;
+}
+
+.ring-slime { border-color: #66bb6a; }
+.ring-guardian { border-color: #4fc3f7; }
+.ring-brutal { border-color: #ff8f00; border-width: 3px; }
+.ring-specter { border-color: #ab47bc; border-width: 3px; }
+.ring-mimic { border-color: #ff5722; }
+
+@keyframes ringExpand {
+  0% { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(2.1); opacity: 0; }
+}
+
+/* ikona efektu na kafelku */
 .combat-slash {
   position: absolute;
   inset: 0;
@@ -796,11 +868,20 @@ body.spell-dezint .cell.covered { cursor: url("data:image/svg+xml,%3Csvg xmlns='
   font-size: calc(var(--cell-size) * 0.65);
   pointer-events: none;
   z-index: 10;
-  animation: slashPop 0.45s ease forwards;
+  animation: slashPop 0.5s ease forwards;
+}
+
+.slash-specter {
+  animation: specterRise 0.6s ease forwards;
 }
 
 @keyframes slashPop {
   0% { transform: scale(0.4) rotate(-20deg); opacity: 1; }
-  50% { transform: scale(1.25) rotate(10deg); opacity: 1; }
+  45% { transform: scale(1.3) rotate(10deg); opacity: 1; }
   100% { transform: scale(0.9) rotate(0deg); opacity: 0; }
+}
+
+@keyframes specterRise {
+  0% { transform: translateY(4px) scale(0.6); opacity: 1; }
+  100% { transform: translateY(-18px) scale(1.3); opacity: 0; }
 }
