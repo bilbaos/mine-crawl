@@ -494,49 +494,83 @@ function revealCell(idx, userTriggered) {
   c.flagged = false;
 
   if (c.content === CONTENT_ENEMY) {
-    // Combat!
+    // obliczanie obrazen i zapisanie danych wroga przed wyczyszczeniem pola
     const dmg = Math.max(0, c.enemy.level - G.atk);
-    const el = document.querySelector(`.cell[data-idx="${idx}"]`);
-    el && el.classList.add('explode');
+    const enemySnapshot = { ...c.enemy };
+    let blockedByShield = false;
 
     if (G.hasShield && dmg > 0) {
       G.hasShield = false;
-      addLog('warn', `🛡 Tarcza pochłonęła atak ${c.enemy.name}!`);
-      spawnParticle(el, '🛡 -0 HP', '#4fc3f7');
+      blockedByShield = true;
+      addLog('warn', `🛡 Tarcza pochłonęła atak ${enemySnapshot.name}!`);
     } else if (dmg > 0) {
       G.hp = Math.max(0, G.hp - dmg);
-      addLog('damage', `⚔ Walka: ${c.enemy.name} Lv.${c.enemy.level} — obrażenia: ${dmg} HP`);
+      addLog('damage', `⚔ Walka: ${enemySnapshot.name} Lv.${enemySnapshot.level} — obrażenia: ${dmg} HP`);
       const portrait = document.getElementById('portrait');
       portrait.classList.remove('pulse');
       void portrait.offsetWidth;
       portrait.classList.add('pulse');
-      document.getElementById('grid-container').classList.remove('flash-damage');
-      void document.getElementById('grid-container').offsetWidth;
-      document.getElementById('grid-container').classList.add('flash-damage');
-      spawnParticle(el, `-${dmg} HP`, '#e53935');
     } else {
-      addLog('kill', `⚔ Zabito ${c.enemy.name} Lv.${c.enemy.level} bez obrażeń!`);
-      spawnParticle(el, `+${c.enemy.exp} EXP`, '#66bb6a');
+      addLog('kill', `⚔ Zabito ${enemySnapshot.name} Lv.${enemySnapshot.level} bez obrażeń!`);
     }
 
-    // Give EXP
-    gainExp(c.enemy.exp);
-    // Remove enemy content (field now empty)
+    // przyznanie exp i wyczyszczenie pola
+    gainExp(enemySnapshot.exp);
     c.content = CONTENT_EMPTY;
     c.enemy = null;
     renderHUD();
 
-    if (G.hp <= 0) { setTimeout(()=>playerDied(), 300); return; }
+    // najpierw odswiezamy kafelek, potem odpalamy animacje walki
+    updateCell(idx);
+    playCombatAnimation(idx, enemySnapshot, dmg, blockedByShield);
+
+    if (G.hp <= 0) { setTimeout(()=>playerDied(), 350); return; }
   } else {
-    // Safe - check for cascades
+    // bezpieczne pole i kaskada
     if (c.number === 0 && !c.item) {
       cascadeReveal(idx);
     }
+    updateCell(idx);
   }
 
-  updateCell(idx);
-  // Check win
+  // sprawdzenie warunku wygranej
   checkSectorComplete();
+}
+
+function playCombatAnimation(idx, enemy, dmg) {
+  const el = document.querySelector(`.cell[data-idx="${idx}"]`);
+  const gridContainer = document.getElementById('grid-container');
+
+  if (gridContainer) {
+    gridContainer.classList.remove('flash-damage', 'combat-shake-light', 'combat-shake-heavy');
+    void gridContainer.offsetWidth;
+    if (dmg > 0) {
+      gridContainer.classList.add('flash-damage', 'combat-shake-heavy');
+    } else {
+      gridContainer.classList.add('combat-shake-light');
+    }
+  }
+
+  if (!el) return;
+
+  // animacja uderzenia na samym kafelku
+  el.classList.remove('combat-hit', 'combat-kill');
+  void el.offsetWidth;
+  el.classList.add(dmg > 0 ? 'combat-hit' : 'combat-kill');
+
+  // chwilowe pokazanie ikony potwora i ciecia mieczem
+  const slash = document.createElement('div');
+  slash.className = 'combat-slash';
+  slash.textContent = dmg > 0 ? '💥' : '⚔';
+  el.appendChild(slash);
+  setTimeout(() => slash.remove(), 450);
+
+  // unoszacy sie tekst nad kafelkiem
+  if (dmg > 0) {
+    spawnParticle(el, `-${dmg} HP`, '#ff5252');
+  } else {
+    spawnParticle(el, `⚔ +${enemy.exp} EXP`, '#66bb6a');
+  }
 }
 
 function cascadeReveal(idx) {

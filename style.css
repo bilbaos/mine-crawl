@@ -735,3 +735,72 @@ body.spell-dezint .cell.covered { cursor: url("data:image/svg+xml,%3Csvg xmlns='
 
 /* Accessible colorblind symbols */
 .cb-sym { font-size: calc(var(--cell-size)*0.22); position: absolute; bottom: 1px; right: 1px; opacity: 0.6; }
+
+/* poprawione pozycjonowanie tekstu obrazen i exp */
+.particle {
+  transform: translateX(-50%);
+  text-shadow: 0 2px 0 #000, 0 0 8px currentColor;
+  white-space: nowrap;
+}
+
+/* wstrzas planszy przy walce */
+#grid-container.combat-shake-light {
+  animation: shakeLight 0.25s ease;
+}
+
+#grid-container.combat-shake-heavy {
+  animation: shakeHeavy 0.38s ease;
+}
+
+@keyframes shakeLight {
+  0%, 100% { transform: translate(0, 0); }
+  25% { transform: translate(-3px, 1px); }
+  50% { transform: translate(3px, -1px); }
+  75% { transform: translate(-2px, 0); }
+}
+
+@keyframes shakeHeavy {
+  0%, 100% { transform: translate(0, 0); filter: none; }
+  20% { transform: translate(-6px, 3px); filter: brightness(0.7) sepia(1) hue-rotate(-30deg) saturate(4); }
+  40% { transform: translate(6px, -3px); }
+  60% { transform: translate(-4px, -2px); }
+  80% { transform: translate(4px, 2px); }
+}
+
+/* rozblysk kafelka przy walce */
+.cell.combat-kill {
+  animation: cellKillFlash 0.45s ease;
+}
+
+.cell.combat-hit {
+  animation: cellHitFlash 0.5s ease;
+}
+
+@keyframes cellKillFlash {
+  0% { background: #2e7d32; box-shadow: 0 0 16px #66bb6a; transform: scale(1.12); }
+  100% { background: var(--c-revealed); box-shadow: none; transform: scale(1); }
+}
+
+@keyframes cellHitFlash {
+  0% { background: #b71c1c; box-shadow: 0 0 20px #ff1744; transform: scale(1.15); }
+  100% { background: var(--c-revealed); box-shadow: none; transform: scale(1); }
+}
+
+/* ikona ciecia na kafelku */
+.combat-slash {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: calc(var(--cell-size) * 0.65);
+  pointer-events: none;
+  z-index: 10;
+  animation: slashPop 0.45s ease forwards;
+}
+
+@keyframes slashPop {
+  0% { transform: scale(0.4) rotate(-20deg); opacity: 1; }
+  50% { transform: scale(1.25) rotate(10deg); opacity: 1; }
+  100% { transform: scale(0.9) rotate(0deg); opacity: 0; }
+}
