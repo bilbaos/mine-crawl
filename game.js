@@ -339,15 +339,23 @@ function updateCellEl(el, idx) {
     return;
   }
 
-  // Revealed
+// Revealed
   el.classList.add('revealed');
   if (c.content === CONTENT_EMPTY || c.content === CONTENT_ENEMY) {
     if (c.item === 'key' && !G.keyFound) {
       el.textContent = '🗝';
       el.classList.add('key-cell');
-    } else if (c.item === 'hatch' && G.keyFound && !G.hatchOpen) {
+    } else if (c.item === 'hatch' && !G.hatchOpen) {
       el.textContent = '🚪';
-      el.classList.add('hatch-cell');
+      el.classList.add(G.keyFound ? 'hatch-cell' : 'hatch-locked');
+      el.title = G.keyFound ? 'Otwarty właz — kliknij, aby przejść dalej' : 'Zamknięty właz — potrzebujesz klucza';
+      // jesli obok wlazu sa wrogowie, pokazujemy mala cyfre w rogu, zeby nie tracic wskazowki
+      if (c.number > 0) {
+        const subNum = document.createElement('span');
+        subNum.className = 'hatch-num n' + Math.min(c.number, 8);
+        subNum.textContent = c.number;
+        el.appendChild(subNum);
+      }
     } else if (c.item === 'potion') {
       el.textContent = '🧪';
     } else if (c.item === 'crystal') {
@@ -441,19 +449,19 @@ function onCellClick(e) {
   const c = G.cells[idx];
   if (c.state === CELL_REVEALED) {
     if (c.item === 'key' && !G.keyFound) { collectKey(idx); return; }
-    if (c.item === 'hatch' && G.keyFound) { openHatch(idx); return; }
+    if (c.item === 'hatch') { openHatch(idx); return; }
     if (c.item === 'potion') { collectPotion(idx, 'potion'); return; }
     if (c.item === 'crystal') { collectPotion(idx, 'crystal'); return; }
     if (c.item === 'shield') { collectPotion(idx, 'shield'); return; }
     return;
   }
-  if (c.flagged && G.activeSpell !== 'flag') return; // blocked
+  if (c.flagged && G.activeSpell !== 'flag') return;
 
-  // SPELL MODE
+  // tryb zaklec
   if (G.activeSpell === 'echo') { castEcho(idx); return; }
   if (G.activeSpell === 'dezint') { castDezint(idx); return; }
 
-  // Normal reveal
+  // normalne odkrycie pola
   if (G.firstClick) {
     ensureSafeStart(idx);
     G.firstClick = false;
@@ -793,8 +801,16 @@ function collectKey(idx) {
   showOverlay('🗝 KLUCZ ZNALEZIONY!\nSzukaj włazu...', 1200);
   updateCell(idx);
   renderInventory();
-  // Reveal hatch cell hint
-  updateCell(G.hatchCell);
+
+  // jesli wlaz zostal juz wczesniej odkryty na planszy, odblokowujemy jego wyglad
+  if (G.hatchCell !== -1 && G.cells[G.hatchCell].state === CELL_REVEALED) {
+    updateCell(G.hatchCell);
+    const hatchEl = document.querySelector(`.cell[data-idx="${G.hatchCell}"]`);
+    if (hatchEl) {
+      hatchEl.classList.add('hatch-unlock-flash');
+      setTimeout(() => hatchEl.classList.remove('hatch-unlock-flash'), 600);
+    }
+  }
 }
 
 function openHatch(idx) {

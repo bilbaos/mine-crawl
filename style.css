@@ -885,3 +885,32 @@ body.spell-dezint .cell.covered { cursor: url("data:image/svg+xml,%3Csvg xmlns='
   0% { transform: translateY(4px) scale(0.6); opacity: 1; }
   100% { transform: translateY(-18px) scale(1.3); opacity: 0; }
 }
+
+
+/* zamkniety wlaz przed zdobyciem klucza */
+.cell.hatch-locked {
+  box-shadow: inset 0 0 8px #ff8f0066;
+  border-color: #ff8f0088;
+  filter: grayscale(0.45) brightness(0.85);
+}
+
+/* mala cyfra w rogu kafelka z wlazem */
+.hatch-num {
+  position: absolute;
+  bottom: 1px;
+  right: 3px;
+  font-size: calc(var(--cell-size) * 0.28);
+  line-height: 1;
+  pointer-events: none;
+}
+
+/* blysk odblokowania wlazu po podniesieniu klucza */
+.cell.hatch-unlock-flash {
+  animation: hatchUnlock 0.6s ease;
+}
+
+@keyframes hatchUnlock {
+  0% { transform: scale(1); box-shadow: 0 0 0 #66bb6a; }
+  50% { transform: scale(1.22); box-shadow: 0 0 22px #66bb6a; }
+  100% { transform: scale(1); box-shadow: 0 0 8px #66bb6a88; }
+}
