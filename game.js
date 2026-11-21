@@ -636,7 +636,7 @@ function ensureSafeStart(idx) {
     );
     movers.forEach(from => {
       const to = spots.pop();
-      if (to === undefined) return;   // brak miejsca (skrajnie gesta, mala plansza)
+      if (to === undefined) return;
       G.cells[to].content = CONTENT_ENEMY;
       G.cells[to].enemy = G.cells[from].enemy;
       G.cells[from].content = CONTENT_EMPTY;
@@ -644,9 +644,6 @@ function ensureSafeStart(idx) {
     });
     computeNumbers();
   }
-
-  // przeniesienie wlazu i klucza z dala od strefy startowej
-  relocateObjectivesFromStart(idx);
 }
 
 function relocateObjectivesFromStart(startIdx) {
@@ -843,7 +840,7 @@ function cascadeReveal(idx) {
       if (visited.has(ni)) continue;
       visited.add(ni);
       const c2 = G.cells[ni];
-      if (c2.state===CELL_REVEALED || c2.content===CONTENT_ENEMY || c2.item==='hatch') continue;
+      if (c2.state===CELL_REVEALED || c2.content===CONTENT_ENEMY) continue;
       c2.state = CELL_REVEALED;
       c2.echoed = false;
       c2.flagged = false;
