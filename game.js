@@ -1,45 +1,86 @@
+// =====================================================================
+// MINE-CRAWL: TACTICAL DEFUSER - logika gry
+// =====================================================================
 
-// GAME STATE
+// ---------- STAN GRY ----------
 const G = {
   mode: 'campaign', // 'campaign' | 'endless'
   sector: 1,
   maxSectors: 10,
-  // Player stats
+  // statystyki gracza
   hp: 3, maxHp: 3,
   atk: 1, baseAtk: 1,
   mp: 5, maxMp: 5,
-  exp: 0, expNext: 200,
+  exp: 0, expNext: 75,
   level: 1,
-  // Meta upgrades (persistent)
+  // ulepszenia trwale (meta) i waluta
   meta: { atk: false, hp: false, arch: false },
   runes: 0,
-  // Grid
+  nodeUnlocked: false,   // Bezpieczny Wezel odblokowuje sie po sektorze NODE_AFTER_SECTOR
+  nodeScreenKind: 'node',
+  // plansza
   cols: 8, rows: 8,
-  cells: [], // flat array [row*cols+col]
+  cells: [], // plaska tablica [row*cols+col]
   firstClick: true,
   gameOver: false,
   won: false,
-  // Items/objectives
+  // cele sektora
   keyFound: false, hatchOpen: false,
   keyCell: -1, hatchCell: -1,
-  // Spell
+  // zaklecie / tarcza
   activeSpell: null,
-  // Shield
   hasShield: false,
 };
 
-// konfiguracja sektorow z wagami pojawiania sie przeciwnikow
+// ---------- ZAPIS POSTEPU (localStorage, z bezpiecznym fallbackiem) ----------
+const Save = {
+  KEY: 'mineCrawl.save.v1',
+  data: { runes: 0, meta: { atk: false, hp: false, arch: false }, tutorialSeen: false },
+  load() {
+    try {
+      const raw = window.localStorage.getItem(this.KEY);
+      if (raw) {
+        const d = JSON.parse(raw);
+        this.data.runes = Number(d.runes) || 0;
+        this.data.meta = Object.assign({ atk: false, hp: false, arch: false }, d.meta || {});
+        this.data.tutorialSeen = !!d.tutorialSeen;
+      }
+    } catch (e) { /* brak dostepu do storage - gra dziala dalej bez zapisu */ }
+  },
+  save() {
+    try { window.localStorage.setItem(this.KEY, JSON.stringify(this.data)); } catch (e) { /* ignorujemy */ }
+  },
+};
+
+function persistProgress() {
+  Save.data.runes = G.runes;
+  Save.data.meta = Object.assign({}, G.meta);
+  Save.save();
+}
+
+// ---------- KONFIGURACJA ----------
+const NODE_AFTER_SECTOR = 5;     // Bezpieczny Wezel pojawia sie dopiero po ukonczeniu tego sektora
+const MIMIC_AMBUSH_DAMAGE = 1;   // zasadzka mimika zawsze zabiera 1 HP
+
+const UPGRADES = {
+  atk:  { cost: 50, name: 'ATK bazowy +1' },
+  hp:   { cost: 40, name: 'Lepsze mikstury (+2 HP)' },
+  arch: { cost: 30, name: 'Bonus EXP +5 za wroga' },
+};
+
+// konfiguracja sektorow: rozmiar, gestosc wrogow (razem z mimikami),
+// STALA liczba mimikow na sektor oraz wagi pozostalych przeciwnikow
 const SECTORS = [
-  [8, 8, 0.22,   { slime: 8, guardian: 5, brutal: 1 }],
-  [10, 10, 0.21, { slime: 5, guardian: 5, brutal: 2, mimic: 1 }],
-  [12, 12, 0.22, { slime: 3, guardian: 5, brutal: 3, mimic: 2 }],
-  [14, 14, 0.24, { guardian: 4, brutal: 4, specter: 1, mimic: 2 }],
-  [12, 12, 0.22, { slime: 3, guardian: 4, brutal: 3, mimic: 1 }], // sektor odpoczynkowy
-  [16, 16, 0.25, { guardian: 3, brutal: 4, specter: 3, mimic: 2 }],
-  [18, 18, 0.27, { guardian: 2, brutal: 4, specter: 4, mimic: 2 }],
-  [20, 20, 0.29, { brutal: 4, specter: 5, mimic: 2 }],
-  [22, 22, 0.31, { brutal: 3, specter: 6, mimic: 2 }],
-  [12, 12, 0.25, { brutal: 4, specter: 6, mimic: 1 }], // sektor finalowy
+  { cols: 8,  rows: 8,  density: 0.22, mimics: 0, weights: { slime: 8, guardian: 5, brutal: 1 } },
+  { cols: 10, rows: 10, density: 0.21, mimics: 1, weights: { slime: 5, guardian: 5, brutal: 2 } },
+  { cols: 12, rows: 12, density: 0.22, mimics: 1, weights: { slime: 3, guardian: 5, brutal: 3 } },
+  { cols: 14, rows: 14, density: 0.24, mimics: 2, weights: { guardian: 4, brutal: 4, specter: 1 } },
+  { cols: 12, rows: 12, density: 0.22, mimics: 0, weights: { slime: 3, guardian: 4, brutal: 3 } }, // sektor odpoczynkowy
+  { cols: 16, rows: 16, density: 0.25, mimics: 2, weights: { guardian: 3, brutal: 4, specter: 3 } },
+  { cols: 18, rows: 18, density: 0.27, mimics: 2, weights: { guardian: 2, brutal: 4, specter: 4 } },
+  { cols: 20, rows: 20, density: 0.29, mimics: 3, weights: { brutal: 4, specter: 5 } },
+  { cols: 22, rows: 22, density: 0.31, mimics: 3, weights: { brutal: 3, specter: 6 } },
+  { cols: 12, rows: 12, density: 0.25, mimics: 2, weights: { brutal: 4, specter: 6 } },            // sektor finalowy
 ];
 
 const ENEMIES = {
@@ -59,64 +100,92 @@ const CONTENT_POTION = 'potion';
 const CONTENT_CRYSTAL = 'crystal';
 const CONTENT_SHIELD = 'shield';
 
+const $ = (id) => document.getElementById(id);
 
-// SCREEN MANAGEMENT
 
+// ---------- EKRANY I SKLEP ----------
 function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-  document.getElementById('screen-' + id).classList.add('active');
+  $('screen-' + id).classList.add('active');
 }
 
 function showTitle() { showScreen('title'); }
 
-function showNode() {
+// kind: 'node' = Bezpieczny Wezel (pelne leczenie + sklep), 'shop' = Stacja Ulepszen (tylko sklep)
+function showNode(kind) {
+  G.nodeScreenKind = (kind === 'shop') ? 'shop' : 'node';
+  if (G.nodeScreenKind === 'node') {
+    G.hp = G.maxHp;   // po powrocie do wezla gracz ma pelne zdrowie i mane
+    G.mp = G.maxMp;
+    renderHUD();
+  }
   updateNodeUI();
   showScreen('node');
 }
 
-function showTitle_() { showScreen('title'); }
-
 function updateNodeUI() {
-  document.getElementById('node-sector').textContent = G.sector;
-  document.getElementById('node-runes').textContent = G.runes;
-  document.getElementById('node-level').textContent = G.level;
-  const upgrades = [
-    { id:'buy-atk', key:'atk', cost:50, label:'shop-atk-cost' },
-    { id:'buy-hp', key:'hp', cost:40, label:'shop-hp-cost' },
-    { id:'buy-arch', key:'arch', cost:30, label:'shop-arch-cost' },
-  ];
-  upgrades.forEach(u => {
-    const btn = document.getElementById('btn-' + u.id);
-    const lbl = document.getElementById(u.label);
-    if (G.meta[u.key]) {
+  const isNode = G.nodeScreenKind === 'node';
+  $('node-title').textContent = isNode ? '⬡ BEZPIECZNY WĘZEŁ ⬡' : '⬡ STACJA ULEPSZEŃ ⬡';
+  $('node-note').textContent = isNode
+    ? '✚ Zdrowie i mana w pełni odnowione. Tu wrócisz po śmierci w kampanii.'
+    : (G.nodeUnlocked
+        ? 'Zdrowie i mana przechodzą do następnego sektora.'
+        : `Bezpieczny Węzeł (pełne leczenie) odblokuje się po sektorze ${NODE_AFTER_SECTOR}.`);
+  $('node-sector').textContent = G.sector;
+  $('node-runes').textContent = G.runes;
+  $('node-level').textContent = G.level;
+  $('node-hp').textContent = `${G.hp}/${G.maxHp}`;
+  $('node-mp').textContent = `${G.mp}/${G.maxMp}`;
+  $('node-continue').textContent = `▶ WEJDŹ DO SEKTORA ${G.sector}`;
+
+  Object.keys(UPGRADES).forEach(key => {
+    const up = UPGRADES[key];
+    const btn = $('btn-buy-' + key);
+    const lbl = $('shop-' + key + '-cost');
+    if (G.meta[key]) {
       btn.textContent = '✓ KUPIONO';
       btn.disabled = true;
       lbl.textContent = '—';
     } else {
       btn.textContent = 'KUP';
-      btn.disabled = G.runes < u.cost;
-      lbl.textContent = u.cost + ' ✦';
+      btn.disabled = G.runes < up.cost;
+      lbl.textContent = up.cost + ' ✦';
     }
   });
-  document.getElementById('node-msg').textContent = '';
+  $('node-msg').textContent = '';
 }
 
 function buyUpgrade(type) {
-  const costs = { atk:50, hp:40, arch:30 };
-  const cost = costs[type];
-  if (G.meta[type]) return;
-  if (G.runes < cost) {
-    document.getElementById('node-msg').textContent = 'Za mało Złotych Run!';
+  const up = UPGRADES[type];
+  if (!up || G.meta[type]) return;
+  if (G.runes < up.cost) {
+    $('node-msg').textContent = 'Za mało Złotych Run!';
     return;
   }
-  G.runes -= cost;
+  G.runes -= up.cost;
   G.meta[type] = true;
-  const names = { atk:'ATK bazowy +1', hp:'Lepsze mikstury', arch:'Bonus EXP +5' };
-  document.getElementById('node-msg').textContent = '✓ Odblokowano: ' + names[type];
+  if (type === 'atk') {          // ulepszenie ataku dziala od razu, nie dopiero od nowej gry
+    G.baseAtk++;
+    G.atk = G.baseAtk;
+  }
+  persistProgress();
   updateNodeUI();
+  $('node-msg').textContent = '✓ Odblokowano: ' + up.name;
+}
+
+function canAffordAnyUpgrade() {
+  return Object.keys(UPGRADES).some(k => !G.meta[k] && G.runes >= UPGRADES[k].cost);
 }
 
 function continueFromNode() { startSector(); }
+
+function resetProgress() {
+  if (!window.confirm('Usunąć Złote Runy, ulepszenia i postęp samouczka?')) return;
+  G.runes = 0;
+  G.meta = { atk: false, hp: false, arch: false };
+  Save.data = { runes: 0, meta: { atk: false, hp: false, arch: false }, tutorialSeen: false };
+  Save.save();
+}
 
 // =====================================================================
 // GAME INIT
@@ -124,22 +193,41 @@ function continueFromNode() { startSector(); }
 function startGame(mode) {
   G.mode = mode;
   G.sector = 1;
-  G.hp = 3; G.maxHp = 3;
-  G.atk = 1 + (G.meta.atk ? 1 : 0); G.baseAtk = G.atk;
-  G.mp = 5; G.maxMp = 5;
+  G.maxHp = 3; G.hp = 3;
+  G.maxMp = 5; G.mp = 5;
+  G.baseAtk = 1 + (G.meta.atk ? 1 : 0);
+  G.atk = G.baseAtk;
   G.exp = 0; G.expNext = 75;
   G.level = 1;
-  G.runes = 0;
   G.hasShield = false;
-  startSector();
+  G.nodeUnlocked = false;
+  // Zlote Runy i ulepszenia meta zostaja miedzy podejsciami (waluta trwala)
+
+  // samouczek przy pierwszym uruchomieniu
+  if (!Save.data.tutorialSeen && typeof Tutorial !== 'undefined') {
+    Tutorial.open(() => startSector());
+  } else {
+    startSector();
+  }
+}
+
+// konfiguracja sektora; w trybie nieskonczonym plansze rosna po sektorze 10
+function sectorConfig(s) {
+  s = s || G.sector;
+  if (s <= SECTORS.length) return SECTORS[s - 1];
+  const extra = s - SECTORS.length;
+  const size = Math.min(26, 22 + extra);
+  return {
+    cols: size, rows: size,
+    density: Math.min(0.36, 0.31 + extra * 0.005),
+    mimics: 3,
+    weights: { brutal: 3, specter: 6 },
+  };
 }
 
 function startSector() {
-  const idx = Math.min(G.sector - 1, SECTORS.length - 1);
-  const cfg = SECTORS[idx];
-  G.cols = cfg[0]; G.rows = cfg[1];
-  const density = cfg[2];
-  const allowedTypes = cfg[3];
+  const cfg = sectorConfig();
+  G.cols = cfg.cols; G.rows = cfg.rows;
   G.firstClick = true;
   G.gameOver = false;
   G.won = false;
@@ -148,75 +236,69 @@ function startSector() {
   G.keyCell = -1;
   G.hatchCell = -1;
   G.activeSpell = null;
-  G.atk = G.baseAtk + (G.meta.atk && G.sector===1 ? 0 : 0); // already set at start
-  // heal to full at sector start if leveled up (handled in levelUp)
+  G.atk = G.baseAtk;
 
-  buildGrid(density, allowedTypes);
+  showScreen('game');   // najpierw pokazujemy ekran, zeby poprawnie zmierzyc rozmiar planszy
+  buildGrid(cfg);
   renderHUD();
-  showScreen('game');
-  addLog('info', `▶ Sektor ${G.sector} - ${getCellDesc()}`);
+  addLog('info', `▶ Sektor ${G.sector} - ${getCellDesc(cfg)}`);
   addLog('info', 'Kliknij pole aby zacząć eksplorację.');
-  document.getElementById('hud-sector').innerHTML =
+  $('hud-sector').innerHTML =
     `SEKTOR ${G.sector}<br><span style="color:#444466;font-size:6px;">${G.mode==='endless'?'TRYB NIESKOŃCZONY':'KAMPANIA'}</span>`;
 }
 
-function getCellDesc() {
-  const idx = Math.min(G.sector-1, SECTORS.length-1);
-  const cfg = SECTORS[idx];
-  return `${cfg[0]}×${cfg[1]}, ${Math.round(cfg[2]*100)}% wrogów`;
+function getCellDesc(cfg) {
+  cfg = cfg || sectorConfig();
+  return `${cfg.cols}×${cfg.rows}, ${Math.round(cfg.density*100)}% wrogów`;
 }
 
 // =====================================================================
 // GRID GENERATION
 // =====================================================================
-
-function buildGrid(density, allowedTypes) {
+function buildGrid(cfg) {
   const n = G.cols * G.rows;
   G.cells = [];
-
-  // 1. Place enemies
-  const numEnemies = G.sector === 1 ? 14 : Math.floor(n * density);
-  const positions = shuffle(Array.from({length: n}, (_,i)=>i));
-
   for (let i = 0; i < n; i++) {
     G.cells.push({
       state: CELL_COVERED,
       content: CONTENT_EMPTY,
       enemy: null,
       item: null,
-      number: 0,
+      number: 0,        // suma poziomow ZYWYCH wrogow na 8 sasiednich polach
       flagged: false,
       echoed: false,
     });
   }
+  const positions = shuffle(Array.from({length: n}, (_, i) => i));
 
-  // w sektorze 1 gwarantujemy dokladny balans: 8 szlamow, 5 straznikow, 1 brutal
-  const sector1Roster = G.sector === 1
+  // Lacznie wrogow = gestosc * pola; z tego STALA liczba mimikow, reszta wg wag
+  const isFirst = G.sector === 1;
+  const totalEnemies = Math.min(isFirst ? 14 : Math.floor(n * cfg.density), n - 4);
+  const mimicCount = Math.min(cfg.mimics || 0, totalEnemies);
+  const regularCount = totalEnemies - mimicCount;
+
+  // w sektorze 1 gwarantujemy dokladny sklad: 8 szlamow, 5 straznikow, 1 brutal
+  const sector1Roster = isFirst
     ? shuffle(['slime','slime','slime','slime','slime','slime','slime','slime','guardian','guardian','guardian','guardian','guardian','brutal'])
     : null;
 
-  for (let i = 0; i < numEnemies && i < positions.length; i++) {
-    const pos = positions[i];
-    const type = sector1Roster
-      ? sector1Roster[i]
-      : (Array.isArray(allowedTypes)
-          ? allowedTypes[Math.floor(Math.random() * allowedTypes.length)]
-          : pickWeightedEnemy(allowedTypes));
-    const eInfo = ENEMIES[type];
-    const level = typeof eInfo.level === 'function' ? eInfo.level(G.sector) : eInfo.level;
-    G.cells[pos].content = CONTENT_ENEMY;
-    G.cells[pos].enemy = { type, level, exp: eInfo.exp + (G.meta.arch ? 5 : 0), emoji: eInfo.emoji, name: eInfo.name };
+  let p = 0;
+  for (let i = 0; i < regularCount; i++, p++) {
+    const type = sector1Roster ? sector1Roster[i] : pickWeightedEnemy(cfg.weights);
+    placeEnemy(positions[p], type);
+  }
+  for (let i = 0; i < mimicCount; i++, p++) {
+    placeEnemy(positions[p], 'mimic');
   }
 
-  // Place key and hatch under safe cells
-  const safeCells = positions.slice(numEnemies);
-  shuffle(safeCells);
+  // klucz i wlaz zawsze pod bezpiecznymi polami
+  const safeCells = positions.slice(p);
   G.keyCell = safeCells[0];
   G.hatchCell = safeCells[1];
   G.cells[G.keyCell].item = 'key';
   G.cells[G.hatchCell].item = 'hatch';
 
-  // Place items in remaining safe cells
+  // przedmioty w pozostalych bezpiecznych polach
   const itemPool = ['potion','potion','crystal','shield','potion'];
   for (let i = 2; i < safeCells.length && i-2 < itemPool.length; i++) {
     if (Math.random() < 0.3) {
@@ -224,20 +306,15 @@ function buildGrid(density, allowedTypes) {
     }
   }
 
-  // Compute numbers
   computeNumbers();
   renderGrid();
 }
 
-function pickWeightedEnemy(weightsObj) {
-  const entries = Object.entries(weightsObj);
-  const total = entries.reduce((acc, [, w]) => acc + w, 0);
-  let roll = Math.random() * total;
-  for (const [type, weight] of entries) {
-    roll -= weight;
-    if (roll <= 0) return type;
-  }
-  return entries[0][0];
+function placeEnemy(pos, type) {
+  const eInfo = ENEMIES[type];
+  const level = typeof eInfo.level === 'function' ? eInfo.level(G.sector) : eInfo.level;
+  G.cells[pos].content = CONTENT_ENEMY;
+  G.cells[pos].enemy = { type, level, exp: eInfo.exp + (G.meta.arch ? 5 : 0), emoji: eInfo.emoji, name: eInfo.name };
 }
 
 function pickWeightedEnemy(weightsObj) {
@@ -249,27 +326,70 @@ function pickWeightedEnemy(weightsObj) {
     if (roll <= 0) return type;
   }
   return entries[0][0];
+}
+
+// ---------- LICZBY NA POLACH (najwazniejsza mechanika dedukcji) ----------
+// Liczba na polu = suma poziomow wrogow, ktorzy WCIAZ kryja sie na 8 sasiednich polach.
+// Wartosc jest liczona dla KAZDEGO pola (rowniez tego, na ktorym stal wrog),
+// a po kazdej zmianie ukladu wrogow odswiezana lokalnie (refreshAround).
+function neighborsOf(idx) {
+  const r = Math.floor(idx / G.cols), c = idx % G.cols, out = [];
+  for (let dr = -1; dr <= 1; dr++) for (let dc = -1; dc <= 1; dc++) {
+    if (dr === 0 && dc === 0) continue;
+    const nr = r + dr, nc = c + dc;
+    if (nr < 0 || nr >= G.rows || nc < 0 || nc >= G.cols) continue;
+    out.push(nr * G.cols + nc);
+  }
+  return out;
+}
+
+function neighborSum(idx) {
+  let sum = 0;
+  for (const ni of neighborsOf(idx)) {
+    const nc = G.cells[ni];
+    if (nc.content === CONTENT_ENEMY) sum += nc.enemy.level;
+  }
+  return sum;
 }
 
 function computeNumbers() {
-  for (let r = 0; r < G.rows; r++) {
-    for (let c = 0; c < G.cols; c++) {
-      const idx = r*G.cols+c;
-      if (G.cells[idx].content === CONTENT_ENEMY) {
-        G.cells[idx].number = G.cells[idx].enemy.level;
-        continue;
+  for (let i = 0; i < G.cells.length; i++) G.cells[i].number = neighborSum(i);
+}
+
+// po usunieciu wroga z pola idx: przelicza liczby w jego otoczeniu (i na nim samym)
+// i odswieza tylko te pola, ktore sie zmienily. Zwraca odkryte pola, ktore spadly do 0.
+function refreshAround(idx) {
+  const turnedZero = [];
+  for (const i of [idx, ...neighborsOf(idx)]) {
+    const cell = G.cells[i];
+    const next = neighborSum(i);
+    const changed = next !== cell.number;
+    cell.number = next;
+    if (i !== idx && cell.state === CELL_REVEALED) {
+      updateCell(i);
+      if (changed) {
+        flashNumber(i);
+        if (next === 0 && !cell.item) turnedZero.push(i);
       }
-      let sum = 0;
-      for (let dr=-1;dr<=1;dr++) for (let dc=-1;dc<=1;dc++) {
-        if (dr===0&&dc===0) continue;
-        const nr=r+dr, nc=c+dc;
-        if (nr<0||nr>=G.rows||nc<0||nc>=G.cols) continue;
-        const ni=nr*G.cols+nc;
-        if (G.cells[ni].content===CONTENT_ENEMY) sum+=G.cells[ni].enemy.level;
-      }
-      G.cells[idx].number = sum;
     }
   }
+  return turnedZero;
+}
+
+// wspolna "obrobka" po zabiciu wroga (walka wrecz i Dezintegracja)
+function settleAfterKill(idx) {
+  const turnedZero = refreshAround(idx);
+  const cell = G.cells[idx];
+  updateCell(idx);
+  if (cell.number === 0 && !cell.item) cascadeReveal(idx);   // zero = kaskada, jak w klasycznym saperze
+  turnedZero.forEach(i => cascadeReveal(i));
+}
+
+function flashNumber(idx) {
+  const el = document.querySelector(`.cell[data-idx="${idx}"]`);
+  if (!el) return;
+  el.classList.add('num-changed');
+  setTimeout(() => el.classList.remove('num-changed'), 700);
 }
 
 // =====================================================================
@@ -278,11 +398,14 @@ function computeNumbers() {
 function renderGrid() {
   const grid = document.getElementById('grid');
   // Compute cell size based on viewport
-  const availW = window.innerWidth - 170; // side panel
-  const availH = window.innerHeight - 52 - 52 - 10; // hud + spellbar
-  const maxCellW = Math.floor((availW - 20) / G.cols);
-  const maxCellH = Math.floor((availH - 20) / G.rows);
-  const cellSize = Math.max(18, Math.min(maxCellW, maxCellH, 48));
+  const hudH = $('hud').offsetHeight || 52;
+  const sideW = $('side-panel').offsetWidth || 160;
+  const availW = window.innerWidth - sideW;
+  const availH = window.innerHeight - hudH;
+  // plansza = komorki + odstepy (gap 2px) + ramka/padding (8px) + zapas na marginesy
+  const maxCellW = Math.floor((availW - 40 - 8 - (G.cols - 1) * 2) / G.cols);
+  const maxCellH = Math.floor((availH - 40 - 8 - (G.rows - 1) * 2) / G.rows);
+  const cellSize = Math.max(18, Math.min(maxCellW, maxCellH, 60));
 
   document.documentElement.style.setProperty('--cell-size', cellSize+'px');
   grid.style.gridTemplateColumns = `repeat(${G.cols}, ${cellSize}px)`;
@@ -300,7 +423,7 @@ function renderGrid() {
 }
 
 function updateAllCells() {
-  const cells = document.querySelectorAll('.cell');
+  const cells = document.querySelectorAll('#grid .cell');   // tylko plansza (nie ilustracje samouczka)
   cells.forEach(el => updateCellEl(el, parseInt(el.dataset.idx)));
 }
 
@@ -315,13 +438,7 @@ function updateCellEl(el, idx) {
     if (G.activeSpell === 'echo' || G.activeSpell === 'dezint') {
       el.classList.add('spell-cursor');
     }
-    if (c.flagged) {
-      el.classList.add('flagged');
-      const fm = document.createElement('span');
-      fm.className = 'flag-mark';
-      fm.textContent = '⚑';
-      el.appendChild(fm);
-    } else if (c.echoed) {
+    if (c.echoed) {
       el.classList.add('echoed');
       const er = document.createElement('span');
       er.className = 'echo-reveal';
@@ -336,36 +453,47 @@ function updateCellEl(el, idx) {
       else { er.textContent = '·'; }
       el.appendChild(er);
     }
+    if (c.flagged) {
+      el.classList.add('flagged');
+      const fm = document.createElement('span');
+      fm.className = 'flag-mark' + (c.echoed ? ' small' : '');
+      fm.textContent = '⚑';
+      el.appendChild(fm);
+    }
     return;
   }
 
-// Revealed
+  // --- pole odkryte: ZAWSZE pokazujemy liczbe wrogow dookoła (gdy > 0) ---
   el.classList.add('revealed');
-  if (c.content === CONTENT_EMPTY || c.content === CONTENT_ENEMY) {
-    if (c.item === 'key' && !G.keyFound) {
-      el.textContent = '🗝';
-      el.classList.add('key-cell');
-    } else if (c.item === 'hatch' && !G.hatchOpen) {
-      el.textContent = '🚪';
-      el.classList.add(G.keyFound ? 'hatch-cell' : 'hatch-locked');
-      el.title = G.keyFound ? 'Otwarty właz — kliknij, aby przejść dalej' : 'Zamknięty właz — potrzebujesz klucza';
-      // jesli obok wlazu sa wrogowie, pokazujemy mala cyfre w rogu, zeby nie tracic wskazowki
-      if (c.number > 0) {
-        const subNum = document.createElement('span');
-        subNum.className = 'hatch-num n' + Math.min(c.number, 8);
-        subNum.textContent = c.number;
-        el.appendChild(subNum);
-      }
-    } else if (c.item === 'potion') {
-      el.textContent = '🧪';
-    } else if (c.item === 'crystal') {
-      el.textContent = '💎';
-    } else if (c.item === 'shield') {
-      el.textContent = '🛡';
-    } else if (c.number > 0) {
-      el.classList.add('n'+Math.min(c.number,8));
-      el.textContent = c.number;
-    }
+
+  let icon = null;
+  if (c.item === 'key' && !G.keyFound) {
+    icon = '🗝';
+    el.classList.add('key-cell');
+  } else if (c.item === 'hatch' && !G.hatchOpen) {
+    icon = '🚪';
+    el.classList.add(G.keyFound ? 'hatch-cell' : 'hatch-locked');
+    el.title = G.keyFound ? 'Otwarty właz — kliknij, aby przejść dalej' : 'Zamknięty właz — potrzebujesz klucza';
+  } else if (c.item === 'potion') { icon = '🧪'; }
+  else if (c.item === 'crystal') { icon = '💎'; }
+  else if (c.item === 'shield') { icon = '🛡'; }
+
+  if (c.number > 0) {
+    el.classList.add('n' + Math.min(c.number, 8));
+    const num = document.createElement('span');
+    num.className = 'cell-num' + (icon ? ' corner' : '');   // przy przedmiocie cyfra idzie w rog
+    num.textContent = c.number;
+    el.appendChild(num);
+    if (!el.title) el.title = `Suma poziomów wrogów dookoła: ${c.number}`;
+  } else if (!el.title) {
+    el.title = 'Brak wrogów dookoła';
+  }
+
+  if (icon) {
+    const ic = document.createElement('span');
+    ic.className = 'cell-icon' + (c.number > 0 ? '' : ' center');
+    ic.textContent = icon;
+    el.appendChild(ic);
   }
 }
 
@@ -402,6 +530,9 @@ function renderHUD() {
   const pct = Math.min(100, Math.floor(G.exp / G.expNext * 100));
   document.getElementById('exp-bar').style.width = pct+'%';
   document.getElementById('exp-label').textContent = `Lv.${G.level}`;
+  // Zlote Runy
+  const runesEl = $('hud-runes');
+  if (runesEl) runesEl.textContent = '✦ ' + G.runes;
   // Spell buttons
   updateSpellButtons();
   // Inventory
@@ -413,12 +544,10 @@ function updateSpellButtons() {
     {id:'flag', cost:1}, {id:'echo', cost:2}, {id:'dezint', cost:4}
   ];
   spells.forEach(s => {
-    const btn1 = document.getElementById('sb-'+s.id);
-    const btn2 = document.getElementById('sbb-'+s.id);
+    const btn = $('sb-' + s.id);
     const canAfford = G.mp >= s.cost;
     const isActive = G.activeSpell === s.id;
-    if (btn1) { btn1.disabled = !canAfford; btn1.classList.toggle('active-spell', isActive); }
-    if (btn2) { btn2.disabled = !canAfford; btn2.classList.toggle('active', isActive); }
+    if (btn) { btn.disabled = !canAfford; btn.classList.toggle('active-spell', isActive); }
   });
   // body cursor class
   document.body.className = G.activeSpell === 'echo' ? 'spell-echo' :
@@ -445,8 +574,11 @@ function renderInventory() {
 function onCellClick(e) {
   e.preventDefault();
   if (G.gameOver || G.won) return;
+  if (typeof Tutorial !== 'undefined' && Tutorial.isOpen()) return;
   const idx = parseInt(e.currentTarget.dataset.idx);
   const c = G.cells[idx];
+
+  // klikniecie w odkryte pole: podniesienie przedmiotu / wlaz
   if (c.state === CELL_REVEALED) {
     if (c.item === 'key' && !G.keyFound) { collectKey(idx); return; }
     if (c.item === 'hatch') { openHatch(idx); return; }
@@ -455,11 +587,20 @@ function onCellClick(e) {
     if (c.item === 'shield') { collectPotion(idx, 'shield'); return; }
     return;
   }
-  if (c.flagged && G.activeSpell !== 'flag') return;
 
-  // tryb zaklec
-  if (G.activeSpell === 'echo') { castEcho(idx); return; }
-  if (G.activeSpell === 'dezint') { castDezint(idx); return; }
+  // tryb zaklec ma pierwszenstwo (rowniez na polach z Znakiem Slabosci)
+  if (G.activeSpell === 'flag') { castFlag(idx); return; }
+  if (G.activeSpell === 'echo' || G.activeSpell === 'dezint') {
+    if (G.firstClick) {
+      addLog('warn', 'Najpierw odkryj pole startowe — Echokacja i Dezintegracja działają od pierwszego ruchu.');
+      return;
+    }
+    if (G.activeSpell === 'echo') castEcho(idx); else castDezint(idx);
+    return;
+  }
+
+  // zwykly klik nie rusza pola z Znakiem Slabosci (ochrona przed pomylka)
+  if (c.flagged) return;
 
   // normalne odkrycie pola
   if (G.firstClick) {
@@ -479,41 +620,29 @@ function onCellRightClick(e) {
 }
 
 function ensureSafeStart(idx) {
-  // jesli pierwsze klikniecie trafia we wroga, przenosimy go
-  if (G.cells[idx].content === CONTENT_ENEMY) {
-    for (let i = 0; i < G.cells.length; i++) {
-      if (G.cells[i].content === CONTENT_EMPTY && i !== idx &&
-          G.cells[i].item !== 'key' && G.cells[i].item !== 'hatch') {
-        G.cells[i].content = CONTENT_ENEMY;
-        G.cells[i].enemy = G.cells[idx].enemy;
-        G.cells[idx].content = CONTENT_EMPTY;
-        G.cells[idx].enemy = null;
-        computeNumbers();
-        break;
-      }
-    }
-  }
+  // strefa startowa 3x3 wokol pierwszego klikniecia musi byc wolna od wrogow
+  const zone = [idx, ...neighborsOf(idx)];
+  const inZone = new Set(zone);
+  const movers = zone.filter(i => G.cells[i].content === CONTENT_ENEMY);
 
-  // czyszczenie bezpiecznej strefy 3x3
-  const r0 = Math.floor(idx / G.cols);
-  const c0 = idx % G.cols;
-  for (let dr=-1;dr<=1;dr++) for (let dc=-1;dc<=1;dc++) {
-    const nr=r0+dr, nc=c0+dc;
-    if (nr<0||nr>=G.rows||nc<0||nc>=G.cols) continue;
-    const ni=nr*G.cols+nc;
-    if (G.cells[ni].content===CONTENT_ENEMY) {
-      for (let i=0;i<G.cells.length;i++) {
-        if (G.cells[i].content===CONTENT_EMPTY && !isNearIdx(i,idx,1) &&
-            G.cells[i].item!=='key' && G.cells[i].item!=='hatch') {
-          G.cells[i].content=CONTENT_ENEMY;
-          G.cells[i].enemy=G.cells[ni].enemy;
-          G.cells[ni].content=CONTENT_EMPTY;
-          G.cells[ni].enemy=null;
-          computeNumbers();
-          break;
-        }
-      }
-    }
+  if (movers.length) {
+    // wrogowie trafiaja na losowe, zakryte, puste pola bez przedmiotow (poza strefa startu)
+    const spots = shuffle(
+      G.cells.map((_, i) => i).filter(i =>
+        !inZone.has(i) &&
+        G.cells[i].content === CONTENT_EMPTY &&
+        G.cells[i].state === CELL_COVERED &&
+        !G.cells[i].item)
+    );
+    movers.forEach(from => {
+      const to = spots.pop();
+      if (to === undefined) return;   // brak miejsca (skrajnie gesta, mala plansza)
+      G.cells[to].content = CONTENT_ENEMY;
+      G.cells[to].enemy = G.cells[from].enemy;
+      G.cells[from].content = CONTENT_EMPTY;
+      G.cells[from].enemy = null;
+    });
+    computeNumbers();
   }
 
   // przeniesienie wlazu i klucza z dala od strefy startowej
@@ -586,7 +715,7 @@ function revealCell(idx, userTriggered) {
     // mimik ma poziom 0 na runach, ale zaskakuje gracza przy kliknieciu bez echokacji
     const isMimicAmbush = c.enemy.type === 'mimic' && !wasEchoed;
     const dmg = isMimicAmbush
-      ? Math.max(1, Math.floor(G.sector / 4))
+      ? MIMIC_AMBUSH_DAMAGE
       : Math.max(0, c.enemy.level - G.atk);
 
     const enemySnapshot = { ...c.enemy };
@@ -617,11 +746,15 @@ function revealCell(idx, userTriggered) {
     c.enemy = null;
     renderHUD();
 
-    // najpierw odswiezamy kafelek, potem odpalamy animacje walki
-    updateCell(idx);
+    // przeliczamy liczby wokol pola, potem odpalamy animacje walki
+    settleAfterKill(idx);
     playCombatAnimation(idx, enemySnapshot, dmg, blockedByShield);
 
-    if (G.hp <= 0) { setTimeout(()=>playerDied(), 350); return; }
+    if (G.hp <= 0) {
+      G.gameOver = true;   // od razu blokujemy kolejne klikniecia
+      setTimeout(()=>playerDied(), 350);
+      return;
+    }
   } else {
     // bezpieczne pole i kaskada
     if (c.number === 0 && !c.item) {
@@ -634,7 +767,7 @@ function revealCell(idx, userTriggered) {
   checkSectorComplete();
 }
 
-function playCombatAnimation(idx, enemy, dmg, blockedByShield = false) {
+function playCombatAnimation(idx, enemy, dmg, blockedByShield = false, effectOverride = null) {
   const el = document.querySelector(`.cell[data-idx="${idx}"]`);
   const gridContainer = document.getElementById('grid-container');
   const type = enemy.type || 'slime';
@@ -664,7 +797,7 @@ function playCombatAnimation(idx, enemy, dmg, blockedByShield = false) {
   el.classList.add(`anim-${type}`, dmg > 0 && !blockedByShield ? 'combat-hit' : 'combat-kill');
 
   // fala uderzeniowa dla silniejszych przeciwnikow (poziom 3+ lub obrazenia > 0)
-  if (enemy.level >= 3 || dmg > 0) {
+  if (enemy.level >= 3 || dmg > 0 || effectOverride) {
     const ring = document.createElement('div');
     ring.className = `combat-ring ring-${type}`;
     el.appendChild(ring);
@@ -682,7 +815,7 @@ function playCombatAnimation(idx, enemy, dmg, blockedByShield = false) {
 
   const slash = document.createElement('div');
   slash.className = `combat-slash slash-${type}`;
-  slash.textContent = blockedByShield ? '🛡' : (effectIcons[type] || '⚔');
+  slash.textContent = blockedByShield ? '🛡' : (effectOverride || effectIcons[type] || '⚔');
   el.appendChild(slash);
   setTimeout(() => slash.remove(), 500);
 
@@ -755,6 +888,7 @@ function castFlag(idx) {
 function castEcho(idx) {
   const c = G.cells[idx];
   if (c.state === CELL_REVEALED) return;
+  if (c.echoed) { addLog('info', 'To pole jest już prześwietlone.'); return; }
   if (G.mp < 2) { addLog('warn','Brak many!'); return; }
   G.mp -= 2;
   c.echoed = true;
@@ -771,25 +905,33 @@ function castEcho(idx) {
 function castDezint(idx) {
   const c = G.cells[idx];
   if (c.state === CELL_REVEALED) return;
-  if (G.mp < 4) { addLog('warn','Brak many!'); return; }
+  if (G.mp < 4) { addLog('warn', 'Brak many!'); return; }
   G.mp -= 4;
   G.activeSpell = null;
 
-  if (c.content === CONTENT_ENEMY) {
-    addLog('spell', `💥 Dezintegracja: ${c.enemy.name} Lv.${c.enemy.level} zniszczony! (+${c.enemy.exp} EXP)`);
-    gainExp(c.enemy.exp);
-    c.content = CONTENT_EMPTY;
-    c.enemy = null;
-    computeNumbers();
-  } else {
-    addLog('spell', '💥 Dezintegracja: Pole bezpieczne. Odsłonięto.');
-  }
+  const el = document.querySelector(`.cell[data-idx="${idx}"]`);
   c.state = CELL_REVEALED;
   c.echoed = false;
-  c.flagged = false;
-  G.activeSpell = null;
+  c.flagged = false;   // Dezintegracja dziala tez na polach z Znakiem Slabosci
+
+  if (c.content === CONTENT_ENEMY) {
+    const snap = { ...c.enemy };
+    addLog('spell', `💥 Dezintegracja: ${snap.name} Lv.${snap.level} zniszczony! (+${snap.exp} EXP, -4 MP)`);
+    c.content = CONTENT_EMPTY;
+    c.enemy = null;
+    gainExp(snap.exp);
+    updateSpellButtons();
+    renderHUD();
+    settleAfterKill(idx);                                  // te same zasady co po zwyklej walce
+    playCombatAnimation(idx, snap, 0, false, '💥');
+    return;
+  }
+
+  addLog('spell', '💥 Dezintegracja: pole było bezpieczne. Odsłonięto (-4 MP).');
+  if (c.number === 0 && !c.item) cascadeReveal(idx);
+  updateCell(idx);
+  spawnParticle(el, '💥 puste pole', '#ff8a65');
   updateSpellButtons();
-  updateAllCells();
   renderHUD();
 }
 
@@ -818,7 +960,7 @@ function openHatch(idx) {
   G.hatchOpen = true;
   G.cells[idx].item = null;
   addLog('item', '🚪 Właz otwarty! Przejście do następnego sektora.');
-  showOverlay('🚪 SEKTOR UKOŃCZONY!', 1000);
+  showOverlay(`🚪 SEKTOR UKOŃCZONY!\n+${sectorReward(G.sector)} ✦ Złotych Run`, 1100);
   setTimeout(()=>nextSector(), 1200);
 }
 
@@ -873,34 +1015,58 @@ function checkSectorComplete() {
   // Win by hatch (main path)
 }
 
+// nagroda w Zlotych Runach za ukonczenie sektora
+function sectorReward(sector) { return 20 + sector * 5; }
+
 function nextSector() {
-  G.sector++;
-  if (G.mode === 'campaign' && G.sector > G.maxSectors) {
-    // Win!
-    document.getElementById('ws-sectors').textContent = G.maxSectors;
-    document.getElementById('ws-level').textContent = G.level;
-    document.getElementById('ws-runes').textContent = G.runes;
+  const cleared = G.sector;
+  G.runes += sectorReward(cleared);
+  persistProgress();
+
+  if (G.mode === 'campaign' && cleared >= G.maxSectors) {
+    // zwyciestwo
+    $('ws-sectors').textContent = G.maxSectors;
+    $('ws-level').textContent = G.level;
+    $('ws-runes').textContent = G.runes;
     showScreen('win');
     return;
   }
-  // Earn runes per sector
-  G.runes += 15 + G.sector * 5;
+
+  G.sector = cleared + 1;
   if (G.mode === 'endless') {
     startSector();
+  } else if (cleared === NODE_AFTER_SECTOR) {
+    G.nodeUnlocked = true;          // od teraz wracasz tu po smierci
+    showNode('node');
+  } else if (canAffordAnyUpgrade()) {
+    showNode('shop');               // miedzy sektorami mozna kupic ulepszenia, jesli stac gracza
   } else {
-    showNode();
+    startSector();
   }
 }
 
 // DEATH
 function playerDied() {
   G.gameOver = true;
-  document.getElementById('ds-sector').textContent = G.sector;
-  document.getElementById('ds-level').textContent = G.level;
-  document.getElementById('ds-atk').textContent = G.atk;
-  document.getElementById('ds-exp').textContent = G.exp;
-  document.getElementById('ds-runes').textContent = G.runes;
+  $('ds-sector').textContent = G.sector;
+  $('ds-level').textContent = G.level;
+  $('ds-atk').textContent = G.atk;
+  $('ds-exp').textContent = G.exp;
+  $('ds-runes').textContent = G.runes;
+
+  const backToNode = G.mode === 'campaign' && G.nodeUnlocked;
+  $('death-primary').textContent = backToNode ? '→ BEZPIECZNY WĘZEŁ' : '↻ ZACZNIJ OD NOWA';
+  $('death-note').textContent = backToNode
+    ? 'Wracasz do Bezpiecznego Węzła: zdrowie i mana zostaną w pełni odnowione.'
+    : (G.mode === 'campaign'
+        ? `Bezpieczny Węzeł odblokujesz po ukończeniu sektora ${NODE_AFTER_SECTOR}. Zaczynasz kampanię od nowa, ale Złote Runy i ulepszenia zostają.`
+        : 'Koniec rundy. Złote Runy i ulepszenia zostają.');
   showScreen('death');
+}
+
+function deathPrimary() {
+  if (G.mode === 'campaign' && G.nodeUnlocked) showNode('node');
+  else startGame(G.mode);
 }
 
 
@@ -949,6 +1115,8 @@ function spawnParticle(el, text, color) {
 // KEYBOARD
 document.addEventListener('keydown', e => {
   if (G.gameOver || G.won) return;
+  if (!$('screen-game').classList.contains('active')) return;
+  if (typeof Tutorial !== 'undefined' && Tutorial.isOpen()) return;
   const key = e.key;
   if (key==='1') setSpell('flag');
   else if (key==='2') setSpell('echo');
@@ -972,13 +1140,18 @@ window.addEventListener('resize', ()=>{
   }
 });
 
-
 // INIT
+Save.load();
+G.runes = Save.data.runes;
+G.meta = Object.assign({ atk: false, hp: false, arch: false }, Save.data.meta);
 
-// Make showTitle work on buttons
+// funkcje wywolywane z atrybutow onclick w index.html
+window.Save = Save;   // dostep dla tutorial.js
 window.startGame = startGame;
 window.showTitle = showTitle;
 window.showNode = showNode;
 window.buyUpgrade = buyUpgrade;
 window.continueFromNode = continueFromNode;
 window.setSpell = setSpell;
+window.deathPrimary = deathPrimary;
+window.resetProgress = resetProgress;

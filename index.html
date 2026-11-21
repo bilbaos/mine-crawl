@@ -24,10 +24,12 @@
       <div class="title-info">Zejdź w głąb Matrycy Cieni.<br>Neutralizuj zagrożenia. Przeżyj.</div>
       <button class="btn-main" onclick="startGame('campaign')">▶ KAMPANIA</button>
       <button class="btn-main secondary" onclick="startGame('endless')">∞ TRYB NIESKOŃCZONY</button>
+      <button class="btn-main secondary" onclick="Tutorial.open()">❓ JAK GRAĆ</button>
       <div class="title-info" style="font-size:11px;color:#333355;margin-top:8px;">
         LPM: odkryj pole &nbsp;|&nbsp; PPM: Znak Słabości<br>
         [1] Znak &nbsp;[2] Echokacja &nbsp;[3] Dezintegracja
       </div>
+      <button class="link-btn" onclick="resetProgress()">↺ resetuj postęp (runy i ulepszenia)</button>
     </div>
   </div>
 
@@ -35,13 +37,15 @@
        BEZPIECZNY WĘZEŁ (meta-progresja między sektorami)
   ================================================================ -->
   <div id="screen-node" class="screen">
-    <div class="node-title">⬡ BEZPIECZNY WĘZEŁ ⬡</div>
+    <div class="node-title" id="node-title">⬡ BEZPIECZNY WĘZEŁ ⬡</div>
     <div class="node-panel">
       <div class="corner-deco tl" style="border-color:#2a6a2a;"></div>
       <div class="corner-deco tr" style="border-color:#2a6a2a;"></div>
       <div class="corner-deco bl" style="border-color:#2a6a2a;"></div>
       <div class="corner-deco br" style="border-color:#2a6a2a;"></div>
       <div class="node-runes-row">Ξ Δ Ω Σ Φ Ψ Ξ Δ Ω Σ Φ Ψ Ξ Δ Ω Σ Φ Ψ</div>
+
+      <div class="node-note" id="node-note"></div>
 
       <!-- Zasoby gracza -->
       <div class="node-resources">
@@ -57,6 +61,20 @@
           <div>
             <div style="font-size:12px;color:#888;">Złote Runy</div>
             <div class="val" id="node-runes">0</div>
+          </div>
+        </div>
+        <div class="node-resource">
+          <span class="icon">❤</span>
+          <div>
+            <div style="font-size:12px;color:#888;">Zdrowie</div>
+            <div class="val" id="node-hp">3/3</div>
+          </div>
+        </div>
+        <div class="node-resource">
+          <span class="icon">💎</span>
+          <div>
+            <div style="font-size:12px;color:#888;">Mana</div>
+            <div class="val" id="node-mp">5/5</div>
           </div>
         </div>
         <div class="node-resource">
@@ -94,7 +112,7 @@
       </div>
 
       <div style="display:flex;gap:10px;">
-        <button class="node-btn" style="color:#66bb6a;border-color:#2a6a2a;" onclick="continueFromNode()">▶ WEJDŹ DO SEKTORA</button>
+        <button class="node-btn" id="node-continue" style="color:#66bb6a;border-color:#2a6a2a;" onclick="continueFromNode()">▶ WEJDŹ DO SEKTORA</button>
         <button class="node-btn" style="color:#888;border-color:#333;" onclick="showTitle()">↩ MENU</button>
       </div>
       <div id="node-msg" style="font-size:14px;color:#66bb6a;text-align:center;min-height:18px;"></div>
@@ -135,10 +153,12 @@
         </div>
       </div>
 
+      <div class="hud-runes" id="hud-runes" title="Złote Runy">✦ 0</div>
       <div class="hud-sector" id="hud-sector">
         SEKTOR 1<br>
         <span style="color:#444466;font-size:6px;">MATRYCA CIENI</span>
       </div>
+      <button class="hud-help" onclick="Tutorial.open()" title="Jak grać?">?</button>
     </div>
 
     <!-- Obszar gry: siatka + panel boczny -->
@@ -185,6 +205,16 @@
         </div>
 
         <div class="panel-section">
+          <div class="panel-title">STEROWANIE</div>
+          <div class="controls-hint">
+            <span><b>LPM</b> odkryj pole</span>
+            <span><b>PPM</b> Znak Słabości</span>
+            <span><b>1 2 3</b> wybór zaklęcia</span>
+            <span><b>Esc</b> anuluj zaklęcie</span>
+          </div>
+        </div>
+
+        <div class="panel-section">
           <div class="panel-title">INWENTARZ</div>
           <div class="inv-grid" id="inv-grid"></div>
         </div>
@@ -197,29 +227,6 @@
 
     </div><!-- /game-area -->
 
-    <!-- Pasek zaklęć dolny -->
-    <div id="spell-bar">
-      <button class="spell-bar-btn" id="sbb-flag" onclick="setSpell('flag')">
-        <span class="sbb-icon" style="color:var(--c-flag)">⚑</span>
-        <span class="sbb-name">Znak</span>
-        <span class="sbb-cost">1MP</span>
-        <span class="sbb-key">PPM</span>
-      </button>
-      <button class="spell-bar-btn" id="sbb-echo" onclick="setSpell('echo')">
-        <span class="sbb-icon" style="color:var(--c-echo)">👁</span>
-        <span class="sbb-name">Echokacja</span>
-        <span class="sbb-cost">2MP</span>
-        <span class="sbb-key">2</span>
-      </button>
-      <button class="spell-bar-btn" id="sbb-dezint" onclick="setSpell('dezint')">
-        <span class="sbb-icon" style="color:var(--c-dezint)">💥</span>
-        <span class="sbb-name">Dezint.</span>
-        <span class="sbb-cost">4MP</span>
-        <span class="sbb-key">3</span>
-      </button>
-      <div class="bar-sep"></div>
-      <div class="bar-hint" id="bar-hint">LPM: odkryj &nbsp;|&nbsp; PPM: Znak Słabości</div>
-    </div>
 
   </div><!-- /screen-game -->
 
@@ -228,6 +235,7 @@
   ================================================================ -->
   <div id="screen-death" class="screen">
     <div class="death-title">☠ PADŁEŚ ☠</div>
+    <div class="death-note" id="death-note"></div>
     <div class="death-stats">
       <div class="death-stat"><span>Sektor:</span>      <span id="ds-sector">-</span></div>
       <div class="death-stat"><span>Poziom:</span>      <span id="ds-level">-</span></div>
@@ -235,7 +243,7 @@
       <div class="death-stat"><span>Zebrane EXP:</span> <span id="ds-exp">-</span></div>
       <div class="death-stat"><span>Złote Runy:</span>  <span id="ds-runes">-</span></div>
     </div>
-    <button class="btn-main" onclick="showNode()">→ BEZPIECZNY WĘZEŁ</button>
+    <button class="btn-main" id="death-primary" onclick="deathPrimary()">↻ ZACZNIJ OD NOWA</button>
     <button class="btn-main secondary" onclick="showTitle()">↩ MENU GŁÓWNE</button>
   </div>
 
@@ -258,9 +266,29 @@
   <!-- ================================================================
        NAKŁADKI
   ================================================================ -->
+  <!-- ================================================================
+       SAMOUCZEK
+  ================================================================ -->
+  <div id="tutorial" class="tutorial-overlay" role="dialog" aria-modal="true" aria-labelledby="tut-title">
+    <div class="tut-card">
+      <button class="tut-close" id="tut-close" title="Zamknij (Esc)">✕</button>
+      <div class="tut-step" id="tut-step"></div>
+      <h2 class="tut-title" id="tut-title"></h2>
+      <div class="tut-demo" id="tut-demo"></div>
+      <div class="tut-text" id="tut-text"></div>
+      <div class="tut-dots" id="tut-dots"></div>
+      <div class="tut-buttons">
+        <button class="node-btn tut-btn" id="tut-prev">← WSTECZ</button>
+        <button class="node-btn tut-btn tut-skip" id="tut-skip">POMIŃ</button>
+        <button class="btn-main tut-next" id="tut-next">DALEJ →</button>
+      </div>
+    </div>
+  </div>
+
   <div id="overlay-msg"></div>
   <div id="tooltip"></div>
 
   <script src="game.js"></script>
+  <script src="tutorial.js"></script>
 </body>
 </html>

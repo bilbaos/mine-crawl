@@ -582,53 +582,6 @@ body.spell-dezint .cell.covered { cursor: url("data:image/svg+xml,%3Csvg xmlns='
 .log-entry.info { color: #4fc3f7; }
 .log-entry.lvlup { color: #66bb6a; font-size: 14px; }
 
-/* BOTTOM SPELL BAR */
-#spell-bar {
-  background: var(--c-panel);
-  border-top: 2px solid var(--c-border);
-  padding: 6px 12px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-shrink: 0;
-  min-height: 52px;
-}
-.spell-bar-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  background: #0f0f1c;
-  border: 1px solid var(--c-border2);
-  padding: 6px 12px;
-  cursor: pointer;
-  font-family: 'VT323', monospace;
-  font-size: 16px;
-  color: #ccc;
-  transition: all 0.15s;
-  position: relative;
-}
-.spell-bar-btn:hover:not(:disabled) { background: #1a1a2e; border-color: var(--c-gold); }
-.spell-bar-btn.active { border-color: var(--c-gold); box-shadow: 0 0 8px #c8a84b44; }
-.spell-bar-btn:disabled { opacity: 0.35; cursor: not-allowed; }
-.sbb-key {
-  font-family: 'Press Start 2P', monospace;
-  font-size: 7px;
-  color: #444466;
-  position: absolute;
-  top: 2px; right: 4px;
-}
-.sbb-cost { font-size: 12px; color: var(--c-mp); }
-.sbb-name { font-size: 14px; }
-.sbb-icon { font-size: 20px; }
-
-.bar-sep { flex: 1; }
-.bar-hint {
-  font-size: 13px;
-  color: #444466;
-  text-align: right;
-  line-height: 1.5;
-}
-
 /* DEATH SCREEN */
 #screen-death {
   background: radial-gradient(ellipse at center, #1a0d0d 0%, #0d0d1a 70%);
@@ -894,16 +847,6 @@ body.spell-dezint .cell.covered { cursor: url("data:image/svg+xml,%3Csvg xmlns='
   filter: grayscale(0.45) brightness(0.85);
 }
 
-/* mala cyfra w rogu kafelka z wlazem */
-.hatch-num {
-  position: absolute;
-  bottom: 1px;
-  right: 3px;
-  font-size: calc(var(--cell-size) * 0.28);
-  line-height: 1;
-  pointer-events: none;
-}
-
 /* blysk odblokowania wlazu po podniesieniu klucza */
 .cell.hatch-unlock-flash {
   animation: hatchUnlock 0.6s ease;
@@ -914,3 +857,195 @@ body.spell-dezint .cell.covered { cursor: url("data:image/svg+xml,%3Csvg xmlns='
   50% { transform: scale(1.22); box-shadow: 0 0 22px #66bb6a; }
   100% { transform: scale(1); box-shadow: 0 0 8px #66bb6a88; }
 }
+
+/* =====================================================================
+   LICZBY I IKONY NA ODKRYTYCH POLACH
+   Cyfra (suma poziomow wrogow dookola) jest zawsze widoczna;
+   przy przedmiocie ikona schodzi w prawy dolny rog, a cyfra w lewy gorny.
+   ===================================================================== */
+.cell-num { line-height: 1; pointer-events: none; }
+.cell-num.corner {
+  position: absolute;
+  top: 2px; left: 3px;
+  font-size: calc(var(--cell-size) * 0.32);
+}
+.cell-icon {
+  line-height: 1;
+  pointer-events: none;
+  text-shadow: none;
+  font-size: calc(var(--cell-size) * 0.46);
+}
+.cell-icon:not(.center) { position: absolute; right: 2px; bottom: 2px; }
+.cell-icon.center { font-size: calc(var(--cell-size) * 0.55); }
+
+/* krotki blysk liczby, ktora zmienila wartosc po zabiciu wroga */
+.cell.num-changed .cell-num { animation: numPulse 0.6s ease; }
+@keyframes numPulse {
+  0%   { transform: scale(1.7); filter: brightness(2.4); }
+  100% { transform: scale(1);   filter: none; }
+}
+
+.flag-mark.small {
+  position: absolute;
+  top: 1px; left: 2px;
+  font-size: calc(var(--cell-size) * 0.3);
+  z-index: 2;
+  animation: none;
+}
+
+/* =====================================================================
+   HUD: runy i przycisk pomocy; panel sterowania
+   ===================================================================== */
+.hud-runes {
+  margin-left: auto;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  color: var(--c-gold2);
+  text-shadow: 0 0 6px #c8a84b66;
+  white-space: nowrap;
+}
+.hud-sector { margin-left: 8px; }
+.hud-help {
+  width: 28px; height: 28px;
+  border-radius: 50%;
+  border: 2px solid var(--c-gold);
+  background: #1a1a2e;
+  color: var(--c-gold2);
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.hud-help:hover { background: #2a2a4a; }
+
+.controls-hint { display: flex; flex-direction: column; gap: 3px; font-size: 14px; color: #8888aa; line-height: 1.2; }
+.controls-hint b { color: var(--c-gold2); font-weight: normal; }
+
+.link-btn {
+  background: none; border: none;
+  color: #444466;
+  font-family: 'VT323', monospace;
+  font-size: 14px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.link-btn:hover { color: #8888aa; }
+
+.node-note {
+  text-align: center;
+  font-size: 16px;
+  color: #8fc98f;
+  min-height: 20px;
+}
+.death-note {
+  max-width: min(520px, 90vw);
+  text-align: center;
+  font-size: 18px;
+  line-height: 1.35;
+  color: #b99;
+}
+
+/* =====================================================================
+   SAMOUCZEK
+   ===================================================================== */
+.tutorial-overlay {
+  position: fixed; inset: 0;
+  z-index: 3000;
+  display: none;
+  align-items: center; justify-content: center;
+  background: rgba(5, 5, 12, 0.9);
+  padding: 16px;
+}
+.tutorial-overlay.open { display: flex; }
+
+.tut-card {
+  position: relative;
+  width: min(660px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  background: var(--c-bg2);
+  border: 2px solid var(--c-gold);
+  box-shadow: 0 0 40px #c8a84b33, inset 0 0 20px #00001044;
+  padding: 26px 30px 22px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.tut-close {
+  position: absolute; top: 8px; right: 10px;
+  background: none; border: none;
+  color: #666688; font-size: 18px; cursor: pointer;
+}
+.tut-close:hover { color: var(--c-gold2); }
+.tut-step {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 8px; color: #555577; letter-spacing: 2px;
+}
+.tut-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(11px, 2vw, 15px);
+  font-weight: normal;
+  color: var(--c-gold2);
+  line-height: 1.6;
+  text-shadow: 0 0 10px #c8a84b44;
+}
+.tut-demo {
+  --cell-size: 54px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 10px;
+  min-height: 120px;
+  padding: 14px;
+  background: #0a0a14;
+  border: 1px solid var(--c-border);
+}
+.tut-demo .cell { cursor: default; }
+.tut-demo .cell.covered:hover { transform: none; }
+.tut-text { font-size: 19px; line-height: 1.35; color: #ccc; }
+.tut-text p { margin: 0 0 8px; }
+.tut-text b { color: var(--c-gold2); font-weight: normal; }
+.tut-tip { color: var(--c-rune1); font-size: 17px; }
+
+.tut-dots { display: flex; gap: 8px; justify-content: center; }
+.tut-dot { width: 9px; height: 9px; background: #2a2a4a; border: 1px solid #3a3a6a; }
+.tut-dot.active { background: var(--c-gold); border-color: var(--c-gold2); }
+
+.tut-buttons { display: flex; align-items: center; gap: 10px; }
+.tut-btn { width: auto; padding: 10px 14px; }
+.tut-skip { margin-left: auto; color: #666688; border-color: #2a2a4a; }
+.tut-next { margin-left: 0; font-size: 10px; padding: 11px 20px; }
+
+/* ilustracje samouczka */
+.demo-grid { display: grid; gap: 2px; }
+.demo-row, .demo-fight { display: flex; align-items: center; gap: 14px; }
+.demo-arrow { font-size: 28px; color: var(--c-gold); }
+.demo-vs { color: #666688; font-size: 18px; }
+.demo-chip {
+  display: inline-block;
+  padding: 3px 10px;
+  border: 1px solid var(--c-border2);
+  background: #1a1a2e;
+  color: #ddd;
+  font-size: 21px;
+}
+.demo-chip.atk  { color: var(--c-atk);  border-color: #ff8f0066; }
+.demo-chip.bad  { color: #ef5350;       border-color: #ef535066; }
+.demo-chip.good { color: #66bb6a;       border-color: #66bb6a66; }
+.demo-caption { font-size: 23px; color: #ccc; }
+.n3-text { color: var(--c-rune3); text-shadow: 0 0 6px var(--c-rune3); font-weight: normal; }
+.demo-lvl {
+  position: absolute; bottom: 1px; right: 3px;
+  font-family: 'Press Start 2P', monospace;
+  font-size: calc(var(--cell-size) * 0.22);
+  color: #fff; pointer-events: none;
+}
+.demo-spells { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; width: 100%; }
+.demo-spell {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 10px 6px;
+  background: #12121f; border: 1px solid var(--c-border2);
+  text-align: center; font-size: 17px; color: #ddd;
+}
+.demo-spell .ds-ico { font-size: 28px; }
+.demo-spell b { font-weight: normal; }
+.demo-spell i { font-style: normal; color: var(--c-mp); }
+.demo-spell em { font-style: normal; color: #77779a; font-size: 14px; }
+.demo-loot { display: flex; gap: 28px; }
+.demo-loot > div { display: flex; flex-direction: column; align-items: center; gap: 6px; font-size: 18px; color: #ccc; }
