@@ -30,6 +30,8 @@ const G = {
   // zaklecie / tarcza
   activeSpell: null,
   hasShield: false,
+  boss: null,         // stan Arch-Golema w sektorze finalowym (null w zwyklych sektorach)
+  sparks: 3,          // Iskry Wezla: ile razy po sektorze 5 mozna jeszcze wrocic do Wezla po smierci
   supplyBought: {},   // ile razy w tej wyprawie kupiono kazdy zapas (podnosi cene)
 };
 
@@ -130,18 +132,48 @@ function upgradeCost(key) {
 
 // konfiguracja sektorow: rozmiar, gestosc wrogow (razem z mimikami),
 // STALA liczba mimikow na sektor oraz wagi pozostalych przeciwnikow
+// sektory 2-4 sa nieco gestsze niz wczesniej, zeby losowe klikanie szybciej sie mscilo,
+// a sektor 8 nieco luzniejszy, zeby wygladzic skok trudnosci przed finalem
 const SECTORS = [
   { cols: 8,  rows: 8,  density: 0.22, mimics: 0, weights: { slime: 8, guardian: 5, brutal: 1 } },
-  { cols: 10, rows: 10, density: 0.21, mimics: 1, weights: { slime: 5, guardian: 5, brutal: 2 } },
-  { cols: 12, rows: 12, density: 0.22, mimics: 1, weights: { slime: 3, guardian: 5, brutal: 3 } },
-  { cols: 14, rows: 14, density: 0.24, mimics: 2, weights: { guardian: 4, brutal: 4, specter: 1 } },
+  { cols: 10, rows: 10, density: 0.23, mimics: 1, weights: { slime: 4, guardian: 6, brutal: 2 } },
+  { cols: 12, rows: 12, density: 0.24, mimics: 1, weights: { slime: 2, guardian: 5, brutal: 4 } },
+  { cols: 14, rows: 14, density: 0.25, mimics: 2, weights: { guardian: 4, brutal: 4, specter: 1 } },
   { cols: 12, rows: 12, density: 0.22, mimics: 0, weights: { slime: 3, guardian: 4, brutal: 3 } }, // sektor odpoczynkowy
   { cols: 16, rows: 16, density: 0.25, mimics: 2, weights: { guardian: 3, brutal: 4, specter: 3 } },
   { cols: 18, rows: 18, density: 0.27, mimics: 2, weights: { guardian: 2, brutal: 4, specter: 4 } },
-  { cols: 20, rows: 20, density: 0.29, mimics: 3, weights: { brutal: 4, specter: 5 } },
+  { cols: 20, rows: 20, density: 0.28, mimics: 3, weights: { brutal: 4, specter: 5 } },
   { cols: 22, rows: 22, density: 0.31, mimics: 3, weights: { brutal: 3, specter: 6 } },
-  { cols: 12, rows: 12, density: 0.25, mimics: 2, weights: { brutal: 4, specter: 6 } },            // sektor finalowy
+  { cols: 14, rows: 14, density: 0.22, mimics: 1, weights: { brutal: 4, specter: 6 } },            // sektor finalowy z Arch-Golemem
 ];
+
+// ISKRY WEZLA: po odblokowaniu Wezla smierc cofa do niego tylko tyle razy na wyprawe.
+// Bez limitu nawet losowe klikanie przechodzilo kampanie (wystarczylo ginac i zbierac EXP).
+const NODE_SPARKS = 3;
+
+// ARCH-GOLEM MATRYCY: boss sektora 10 (i co 10. sektora w trybie nieskonczonym)
+// - zajmuje 2x2 zakryte pola; kazda czesc liczy sie do cyfr ze swoim poziomem
+// - 3 Pieczecie Rdzenia na planszy obnizaja poziom wszystkich czesci
+// - kazda zniszczona czesc oslabia pozostale; ostatnia konczy walke
+// - Gniew: przed przebudzeniem co kilka ruchow rodzi sie nowy wrog, po przebudzeniu puls rani gracza
+// Liczby dobrane w symulacji: po 3 pieczeciach czesci maja ATK+2, potem +1, 0, -1 (lacznie 3 obrazenia),
+// wiec do finalu trzeba sie przygotowac (HP, tarcza albo Dezintegracja na najgrozniejsza czesc).
+const BOSS = {
+  overAtk: 8,        // poziom czesci na starcie = ATK gracza + 8 (co najmniej minLevel)
+  minLevel: 9,
+  seals: 3,          // liczba Pieczeci Rdzenia
+  sealDrop: 2,       // ile poziomow zabiera kazda pieczec
+  partWeaken: 1,     // ile poziomow tracia pozostale czesci po zniszczeniu jednej
+  wrathEvery: 8,     // przed przebudzeniem: co tyle ruchow rodzi sie wrog
+  wrathAwake: 4,     // po przebudzeniu: co tyle ruchow puls zadaje obrazenia
+  pulseDamage: 1,
+  maxSpawns: 8,
+  spawnWeights: { brutal: 2, specter: 3 },
+  runeBonus: 60,     // dodatkowe Zlote Runy za pokonanie
+};
+const BOSS_PARTS = ['tl', 'tr', 'bl', 'br'];
+
+function isBossSector(s) { return s % 10 === 0; }
 
 // nazwy sektorow pokazywane na planszy przejscia, w HUD i w logu
 const SECTOR_NAMES = [
@@ -163,6 +195,7 @@ const ENEMIES = {
   brutal:   { level:function(s){ return s<=4?3:(s<=7?4:5); }, exp:26, name:'Brutal Matrycy' },
   specter:  { level:function(s){ return Math.min(9, 4 + Math.floor(s/2)); }, exp:38, name:'Widmo Przestrzenne' },
   mimic:    { level:0, exp:24, name:'Skrzynia (Mimik)' },
+  boss:     { level:9, exp:60, name:'Arch-Golem' },   // poziom ustala placeBoss()
 };
 
 // nazwy przedmiotow do logu (np. po Echokacji)
@@ -172,6 +205,7 @@ const ITEM_NAMES = {
   potion: 'Mikstura zdrowia',
   crystal: 'Kryształ Many',
   shield: 'Tarcza Kinetyczna',
+  seal: 'Pieczęć Rdzenia',
 };
 
 const CELL_COVERED = 0, CELL_REVEALED = 1;
@@ -184,6 +218,17 @@ const CONTENT_CRYSTAL = 'crystal';
 const CONTENT_SHIELD = 'shield';
 
 const $ = (id) => document.getElementById(id);
+
+// sprite wroga; czesci bossa maja wlasne cwiartki (uspione do czasu przebudzenia)
+function enemySprite(enemy) {
+  if (enemy.type !== 'boss') return enemy.type;
+  return (G.boss && G.boss.awake ? 'boss_' : 'boss_sleep_') + enemy.part;
+}
+
+// ikona wroga w logu (czesc bossa pokazuje swoja cwiartke)
+function logSprite(enemy) {
+  return enemy.type === 'boss' ? 'boss_' + enemy.part : enemy.type;
+}
 
 // sprite przedmiotu lezacego na polu; wlaz zmienia wyglad po zdobyciu klucza
 function itemSprite(item) {
@@ -198,7 +243,10 @@ function showScreen(id) {
   $('screen-' + id).classList.add('active');
 }
 
-function showTitle() { showScreen('title'); }
+function showTitle() {
+  showScreen('title');
+  if (typeof Music !== 'undefined') Music.setMood({ title: true, boss: false, awake: false });
+}
 
 // kind: 'node' = Bezpieczny Wezel (pelne leczenie + sklep), 'shop' = Stacja Ulepszen (tylko sklep)
 function showNode(kind) {
@@ -210,13 +258,14 @@ function showNode(kind) {
   }
   updateNodeUI();
   showScreen('node');
+  if (typeof Music !== 'undefined') Music.setMood({ title: true, boss: false, awake: false });   // w Wezle spokojniej
 }
 
 function updateNodeUI() {
   const isNode = G.nodeScreenKind === 'node';
   $('node-title').textContent = isNode ? '⬡ BEZPIECZNY WĘZEŁ ⬡' : '⬡ STACJA ULEPSZEŃ ⬡';
   $('node-note').textContent = isNode
-    ? '✚ Zdrowie i mana w pełni odnowione. Tu wrócisz po śmierci w kampanii.'
+    ? `✚ Zdrowie i mana w pełni odnowione. Iskry Węzła: ${G.sparks}/${NODE_SPARKS} (tyle razy możesz tu wrócić po śmierci).`
     : (G.nodeUnlocked
         ? 'Zdrowie i mana przechodzą do następnego sektora.'
         : `Bezpieczny Węzeł (pełne leczenie) odblokuje się po sektorze ${NODE_AFTER_SECTOR}.`);
@@ -352,6 +401,7 @@ function startGame(mode) {
   G.hasShield = false;
   G.supplyBought = {};
   G.nodeUnlocked = false;
+  G.sparks = NODE_SPARKS;
   // Zlote Runy i ulepszenia meta zostaja miedzy podejsciami (waluta trwala)
 
   // samouczek przy pierwszym uruchomieniu
@@ -366,6 +416,7 @@ function startGame(mode) {
 function sectorConfig(s) {
   s = s || G.sector;
   if (s <= SECTORS.length) return SECTORS[s - 1];
+  if (isBossSector(s)) return { cols: 16, rows: 16, density: 0.24, mimics: 2, weights: { brutal: 3, specter: 6 } };
   const extra = s - SECTORS.length;
   const size = Math.min(26, 22 + extra);
   return {
@@ -388,6 +439,7 @@ function startSector() {
   G.hatchCell = -1;
   G.activeSpell = null;
   G.atk = G.baseAtk;
+  G.boss = null;
 
   showScreen('game');   // najpierw pokazujemy ekran, zeby poprawnie zmierzyc rozmiar planszy
   buildGrid(cfg);
@@ -396,6 +448,11 @@ function startSector() {
   logSector(G.sector, name);
   addLog('info', '', `${cfg.cols}×${cfg.rows} · ${Math.round(cfg.density * 100)}% wrogów`);
   addLog('info', '', 'Pierwszy krok jest bezpieczny.');
+  if (G.boss) {
+    addLog('warn', 'boss_sleep_tl', 'Gdzieś tu śpi Arch-Golem.');
+    addLog('info', 'seal', `Rozbij ${BOSS.seals} Pieczęcie Rdzenia, by go osłabić.`);
+    addLog('info', 'eye', 'Budzi się po ostatniej pieczęci albo po pierwszym ciosie.');
+  }
   $('hud-sector').innerHTML =
     `SEKTOR ${G.sector}<br><span class="hud-sector-name">${name}</span>`;
 
@@ -403,7 +460,8 @@ function startSector() {
   const depth = sectorDepth(G.sector);
   document.documentElement.style.setProperty('--depth', depth.toFixed(2));
   if (typeof Atmos !== 'undefined') Atmos.setDepth(depth);
-  showSectorIntro(name);
+  if (typeof Music !== 'undefined') Music.setMood({ title: false, depth, boss: !!G.boss, awake: false });
+  showSectorIntro(name, !!G.boss);
 }
 
 // PRZEJSCIA MIEDZY SEKTORAMI
@@ -418,11 +476,17 @@ function fadeToBlack(cb) {
 }
 
 // plansza "SEKTOR N / nazwa" na czarnym tle; klikniecie pomija
-function showSectorIntro(name) {
+function showSectorIntro(name, boss = false) {
   const el = $('sector-intro');
   clearTimeout(introTimer);
   $('si-sector').textContent = `SEKTOR ${G.sector}`;
   $('si-name').textContent = name;
+  // w sektorze bossa nad nazwa pojawia sie uspiony Golem, ktory po chwili otwiera oko
+  const portrait = $('si-boss');
+  portrait.innerHTML = boss ? Sprites.html('boss_full_sleep') : '';
+  portrait.classList.toggle('on', boss);
+  el.classList.toggle('boss', boss);
+  if (boss) setTimeout(() => { if (portrait.classList.contains('on')) portrait.innerHTML = Sprites.html('boss_full'); }, 1500);
   if (!el.classList.contains('show')) {
     el.style.transition = 'none';   // z innego ekranu wchodzimy od razu w czern
     el.classList.add('show');
@@ -432,7 +496,7 @@ function showSectorIntro(name) {
   el.classList.remove('reveal');
   void el.offsetWidth;
   el.classList.add('reveal');
-  introTimer = setTimeout(hideSectorIntro, 1800);
+  introTimer = setTimeout(hideSectorIntro, boss ? 3000 : 1800);
 }
 
 function hideSectorIntro() {
@@ -464,7 +528,14 @@ function buildGrid(cfg) {
       echoed: false,
     });
   }
-  const positions = shuffle(Array.from({length: n}, (_, i) => i));
+  const allPositions = shuffle(Array.from({length: n}, (_, i) => i));
+
+  // sektor bossa: najpierw Golem (2x2), potem reszta na wolnych polach
+  if (isBossSector(G.sector)) {
+    G.boss = { cells: [], level: 0, alive: BOSS_PARTS.length, awake: false, sealsLeft: BOSS.seals, wrath: 0, spawned: 0 };
+    placeBoss(new Set());
+  }
+  const positions = allPositions.filter(i => G.cells[i].content === CONTENT_EMPTY);
 
   // Lacznie wrogow = gestosc * pola; z tego STALA liczba mimikow, reszta wg wag
   const isFirst = G.sector === 1;
@@ -486,18 +557,24 @@ function buildGrid(cfg) {
     placeEnemy(positions[p], 'mimic');
   }
 
-  // klucz i wlaz zawsze pod bezpiecznymi polami
+  // klucz i wlaz zawsze pod bezpiecznymi polami (w sektorze bossa zamiast nich sa Pieczecie Rdzenia)
   const safeCells = positions.slice(p);
-  G.keyCell = safeCells[0];
-  G.hatchCell = safeCells[1];
-  G.cells[G.keyCell].item = 'key';
-  G.cells[G.hatchCell].item = 'hatch';
+  let used = 2;
+  if (G.boss) {
+    for (let i = 0; i < BOSS.seals; i++) G.cells[safeCells[i]].item = 'seal';
+    used = BOSS.seals;
+  } else {
+    G.keyCell = safeCells[0];
+    G.hatchCell = safeCells[1];
+    G.cells[G.keyCell].item = 'key';
+    G.cells[G.hatchCell].item = 'hatch';
+  }
 
   // przedmioty w pozostalych bezpiecznych polach
   const itemPool = ['potion','potion','crystal','shield','potion'];
-  for (let i = 2; i < safeCells.length && i-2 < itemPool.length; i++) {
+  for (let i = used; i < safeCells.length && i - used < itemPool.length; i++) {
     if (Math.random() < 0.3) {
-      G.cells[safeCells[i]].item = itemPool[i-2];
+      G.cells[safeCells[i]].item = itemPool[i - used];
     }
   }
 
@@ -511,6 +588,25 @@ function placeEnemy(pos, type) {
   G.cells[pos].content = CONTENT_ENEMY;
   const exp = Math.round(eInfo.exp * (1 + 0.15 * G.meta.exp));   // Archiwum Matrycy: +15% EXP za poziom
   G.cells[pos].enemy = { type, level, exp, name: eInfo.name };
+}
+
+// Arch-Golem na losowym bloku 2x2 (nie przy krawedzi), z dala od pol z "avoid"
+function placeBoss(avoid) {
+  const level = Math.max(BOSS.minLevel, G.atk + BOSS.overAtk);
+  const cand = [];
+  for (let r = 1; r < G.rows - 2; r++) {
+    for (let c = 1; c < G.cols - 2; c++) {
+      const cells = [r * G.cols + c, r * G.cols + c + 1, (r + 1) * G.cols + c, (r + 1) * G.cols + c + 1];
+      if (cells.every(i => G.cells[i].content === CONTENT_EMPTY && !G.cells[i].item && !avoid.has(i))) cand.push(cells);
+    }
+  }
+  const pick = cand[Math.floor(Math.random() * cand.length)];
+  G.boss.cells = pick;
+  G.boss.level = level;
+  pick.forEach((i, k) => {
+    G.cells[i].content = CONTENT_ENEMY;
+    G.cells[i].enemy = { type: 'boss', part: BOSS_PARTS[k], level, exp: ENEMIES.boss.exp, name: ENEMIES.boss.name };
+  });
 }
 
 function pickWeightedEnemy(weightsObj) {
@@ -649,8 +745,20 @@ function updateCellEl(el, idx) {
       const er = document.createElement('span');
       er.className = 'echo-reveal';
       if (c.content === CONTENT_ENEMY) {
-        er.innerHTML = Sprites.html(c.enemy.type);
+        er.innerHTML = Sprites.html(enemySprite(c.enemy));
         er.title = c.enemy.name + ' Lv.' + c.enemy.level;
+        if (c.enemy.type === 'boss') {
+          el.classList.add('boss-part', 'boss-' + c.enemy.part);
+          if (G.boss && G.boss.awake) el.classList.add('boss-awake');
+          // poziom pokazujemy raz, na ostatniej zywej czesci (wszystkie czesci maja ten sam poziom)
+          const alive = G.boss ? G.boss.cells.filter(i => G.cells[i].content === CONTENT_ENEMY) : [];
+          if (alive[alive.length - 1] === idx) {
+            const lv = document.createElement('span');
+            lv.className = 'boss-lv';
+            lv.textContent = 'Lv.' + c.enemy.level;
+            el.appendChild(lv);
+          }
+        }
       } else if (c.item) {
         er.innerHTML = Sprites.html(itemSprite(c.item));
         er.title = ITEM_NAMES[c.item] || '';
@@ -681,6 +789,10 @@ function updateCellEl(el, idx) {
     el.title = G.keyFound ? 'Otwarty właz — kliknij, aby przejść dalej' : 'Zamknięty właz — potrzebujesz klucza';
   } else if (c.item === 'potion' || c.item === 'crystal' || c.item === 'shield') {
     icon = c.item;
+  } else if (c.item === 'seal') {
+    icon = 'seal';
+    el.classList.add('seal-cell');
+    el.title = 'Pieczęć Rdzenia — kliknij, aby ją rozbić';
   }
 
   if (c.number > 0) {
@@ -755,6 +867,7 @@ function renderHUD() {
   updateSpellButtons();
   // Inventory
   renderInventory();
+  renderBossHUD();
 }
 
 function updateSpellButtons() {
@@ -803,6 +916,7 @@ function onCellClick(e) {
     if (c.item === 'potion') { collectPotion(idx, 'potion'); return; }
     if (c.item === 'crystal') { collectPotion(idx, 'crystal'); return; }
     if (c.item === 'shield') { collectPotion(idx, 'shield'); return; }
+    if (c.item === 'seal') { collectSeal(idx); return; }
     return;
   }
 
@@ -855,6 +969,18 @@ function ensureSafeStart(idx) {
   // strefa startowa 3x3 wokol pierwszego klikniecia musi byc wolna od wrogow
   const zone = [idx, ...neighborsOf(idx)];
   const inZone = new Set(zone);
+
+  // Golem przenosi sie w calosci poza strefe startu (z odstepem jednego pola)
+  if (G.boss) {
+    const avoid = new Set(zone);
+    zone.forEach(z => neighborsOf(z).forEach(x => avoid.add(x)));
+    if (G.boss.cells.some(i => avoid.has(i))) {
+      G.boss.cells.forEach(i => { G.cells[i].content = CONTENT_EMPTY; G.cells[i].enemy = null; });
+      placeBoss(avoid);
+      computeNumbers();
+    }
+  }
+
   const movers = zone.filter(i => G.cells[i].content === CONTENT_ENEMY);
 
   if (movers.length) {
@@ -959,11 +1085,11 @@ function revealCell(idx, userTriggered) {
       if (isMimicAmbush) {
         addLog('damage', 'mimic', 'Zasadzka Mimika!', `−${dmg} :heart:`);
       } else {
-        addLog('damage', enemySnapshot.type, `${enemySnapshot.name} Lv.${enemySnapshot.level}`, `−${dmg} :heart:`);
+        addLog('damage', logSprite(enemySnapshot), `${enemySnapshot.name} Lv.${enemySnapshot.level}`, `−${dmg} :heart:`);
       }
       // blysk portretu odpala sie w playCombatAnimation, w chwili uderzenia wroga
     } else {
-      addLog('kill', enemySnapshot.type, `${enemySnapshot.name} Lv.${enemySnapshot.level}`, `+${enemySnapshot.exp} EXP`);
+      addLog('kill', logSprite(enemySnapshot), `${enemySnapshot.name} Lv.${enemySnapshot.level}`, `+${enemySnapshot.exp} EXP`);
     }
 
     // przyznanie exp i wyczyszczenie pola
@@ -981,6 +1107,7 @@ function revealCell(idx, userTriggered) {
       setTimeout(()=>playerDied(), 700);   // ekran smierci dopiero po ciosie, ktory zabil gracza
       return;
     }
+    if (enemySnapshot.type === 'boss') bossPartDestroyed(idx);
   } else {
     // bezpieczne pole i kaskada
     if (c.number === 0 && !c.item) {
@@ -991,6 +1118,7 @@ function revealCell(idx, userTriggered) {
 
   // sprawdzenie warunku wygranej
   checkSectorComplete();
+  if (userTriggered) bossTick();
 }
 
 // czas jednej klatki animacji walki (ms)
@@ -1003,12 +1131,13 @@ function playCombatAnimation(idx, enemy, dmg, blockedByShield = false, effectOve
   const el = document.querySelector(`.cell[data-idx="${idx}"]`);
   const gridContainer = document.getElementById('grid-container');
   const type = enemy.type || 'slime';
-  const isHeavy = dmg >= 2 || enemy.level >= 4;
+  const isHeavy = dmg >= 2 || enemy.level >= 4 || type === 'boss';
 
   // klatki wroga: atak tylko wtedy, gdy wrog faktycznie uderza (rowniez gdy cios przyjmie tarcza)
-  const anim = Sprites.anim(type);
+  const animKey = type === 'boss' ? 'boss_' + enemy.part : type;   // boss ma osobne klatki dla kazdej cwiartki
+  const anim = Sprites.anim(animKey);
   const attackFrames = dmg > 0 && !effectOverride ? anim.attack : [];
-  const frames = [...attackFrames, type, ...anim.death];
+  const frames = [...attackFrames, animKey, ...anim.death];
   const strikeAt = attackFrames.length * COMBAT_FRAME_MS;
 
   if (el) {
@@ -1046,7 +1175,7 @@ function playCombatAnimation(idx, enemy, dmg, blockedByShield = false, effectOve
     // czyszczenie poprzednich klas animacji kafelka
     const animClasses = [
       'combat-hit', 'combat-kill',
-      'anim-slime', 'anim-guardian', 'anim-brutal', 'anim-specter', 'anim-mimic'
+      'anim-slime', 'anim-guardian', 'anim-brutal', 'anim-specter', 'anim-mimic', 'anim-boss'
     ];
     el.classList.remove(...animClasses);
     void el.offsetWidth;
@@ -1068,7 +1197,8 @@ function playCombatAnimation(idx, enemy, dmg, blockedByShield = false, effectOve
       guardian: 'spark',
       brutal: 'flame',
       specter: 'vortex',
-      mimic: dmg > 0 ? 'bite' : 'unlock'
+      mimic: dmg > 0 ? 'bite' : 'unlock',
+      boss: 'flame'
     };
 
     const slash = document.createElement('div');
@@ -1152,12 +1282,13 @@ function castEcho(idx) {
   G.mp -= 2;
   c.echoed = true;
   G.activeSpell = null;
-  if (c.content === CONTENT_ENEMY) addLog('spell', c.enemy.type, `Echo: ${c.enemy.name} Lv.${c.enemy.level}`, '−2 MP');
+  if (c.content === CONTENT_ENEMY) addLog('spell', enemySprite(c.enemy), `Echo: ${c.enemy.name} Lv.${c.enemy.level}`, '−2 MP');
   else if (c.item) addLog('spell', itemSprite(c.item), `Echo: ${ITEM_NAMES[c.item] || c.item}`, '−2 MP');
   else addLog('spell', 'eye', 'Echo: puste pole', '−2 MP');
   updateSpellButtons();
   updateCell(idx);
   renderHUD();
+  bossTick();
 }
 
 function castDezint(idx) {
@@ -1182,6 +1313,8 @@ function castDezint(idx) {
     renderHUD();
     settleAfterKill(idx);                                  // te same zasady co po zwyklej walce
     playCombatAnimation(idx, snap, 0, false, 'blast');
+    if (snap.type === 'boss') bossPartDestroyed(idx);
+    bossTick();
     return;
   }
 
@@ -1191,6 +1324,7 @@ function castDezint(idx) {
   spawnParticle(el, ':blast: puste pole', '#ff8a65');
   updateSpellButtons();
   renderHUD();
+  bossTick();
 }
 
 // ITEMS
@@ -1241,6 +1375,197 @@ function collectPotion(idx, type) {
   c.item = null;
   updateCell(idx);
   renderHUD();
+}
+
+// ARCH-GOLEM
+
+// ustawia poziom wszystkich zywych czesci i przelicza cyfry wokol nich
+function setBossLevel(level) {
+  const b = G.boss;
+  b.level = Math.max(0, level);
+  b.cells.forEach(i => { if (G.cells[i].content === CONTENT_ENEMY) G.cells[i].enemy.level = b.level; });
+  b.cells.forEach(i => {
+    refreshAround(i).forEach(z => cascadeReveal(z));
+    updateCell(i);
+  });
+}
+
+function collectSeal(idx) {
+  const b = G.boss;
+  if (!b) return;
+  G.cells[idx].item = null;
+  b.sealsLeft--;
+  const broken = BOSS.seals - b.sealsLeft;
+  setBossLevel(b.level - BOSS.sealDrop);
+  addLog('item', 'seal_broken', `Pieczęć Rdzenia ${broken}/${BOSS.seals}`, `Golem −${BOSS.sealDrop}`);
+  showOverlay(`:seal_broken: PIECZĘĆ ROZBITA ${broken}/${BOSS.seals}\nArch-Golem słabnie`, 1300);
+  updateCell(idx);
+  renderHUD();
+  shakeGrid('combat-shake-heavy');
+  if (b.sealsLeft === 0 && !b.awake) setTimeout(() => awakenBoss(), 1100);
+}
+
+// przebudzenie: Golem wynurza sie z kamienia, oczy otwieraja sie w ciemnosci, puls zaczyna ranic
+function awakenBoss() {
+  const b = G.boss;
+  if (!b || b.awake || G.gameOver) return;
+  b.awake = true;
+  b.wrath = 0;
+  b.cells.forEach(i => {
+    const c = G.cells[i];
+    if (c.state === CELL_COVERED && c.content === CONTENT_ENEMY) c.echoed = true;
+    updateCell(i);
+  });
+  addLog('damage', 'boss_tl', 'Arch-Golem się budzi!', `Lv.${b.level}`);
+  addLog('warn', 'eye', `Co ${BOSS.wrathAwake} ruchy jego puls rani.`);
+  showOverlay(':boss_full: ARCH-GOLEM SIĘ BUDZI', 1600);
+  shakeGrid('combat-shake-brutal');
+  const gc = $('grid-container');
+  gc.classList.remove('boss-wake');
+  void gc.offsetWidth;
+  gc.classList.add('boss-wake');
+  if (typeof Atmos !== 'undefined') Atmos.burst(10);
+  if (typeof Music !== 'undefined') Music.setMood({ awake: true });
+  renderHUD();
+}
+
+function bossPartDestroyed(idx) {
+  const b = G.boss;
+  if (!b) return;
+  b.alive--;
+  if (b.alive <= 0) { bossDefeated(idx); return; }
+  setBossLevel(b.level - BOSS.partWeaken);
+  addLog('kill', 'boss_' + BOSS_PARTS[b.cells.indexOf(idx)], 'Rdzeń Golema pęka', `zostało ${b.alive}`);
+  if (!b.awake) setTimeout(() => awakenBoss(), 700);
+  renderHUD();
+}
+
+// licznik Gniewu: kazdy ruch gracza (odkrycie, Echokacja, Dezintegracja) go napedza
+function bossTick() {
+  const b = G.boss;
+  if (!b || b.alive <= 0 || G.gameOver || G.won) return;
+  b.wrath++;
+  const every = b.awake ? BOSS.wrathAwake : BOSS.wrathEvery;
+  if (b.wrath >= every) {
+    b.wrath = 0;
+    if (b.awake) bossPulse(); else bossSpawn();
+  }
+  renderBossHUD();
+}
+
+// przed przebudzeniem: w ciemnosci rodzi sie nowy wrog, a cyfry wokol niego rosna
+function bossSpawn() {
+  const b = G.boss;
+  pulseGrid();
+  if (b.spawned >= BOSS.maxSpawns) { addLog('info', 'eye', 'Golem pulsuje w ciemności.'); return; }
+  const cand = G.cells.map((_, i) => i).filter(i => {
+    const c = G.cells[i];
+    return c.state === CELL_COVERED && c.content === CONTENT_EMPTY && !c.item && !c.echoed && !c.flagged;
+  });
+  if (!cand.length) return;
+  const i = cand[Math.floor(Math.random() * cand.length)];
+  placeEnemy(i, pickWeightedEnemy(BOSS.spawnWeights));
+  b.spawned++;
+  for (const j of [i, ...neighborsOf(i)]) {
+    const c = G.cells[j];
+    const next = neighborSum(j);
+    if (next !== c.number) {
+      c.number = next;
+      if (c.state === CELL_REVEALED) { updateCell(j); flashNumber(j); }
+    }
+  }
+  addLog('warn', 'eye', 'Golem pulsuje: w ciemności coś się rodzi.');
+}
+
+// po przebudzeniu: puls rani gracza (tarcza go zatrzymuje)
+function bossPulse() {
+  pulseGrid();
+  if (G.hasShield) {
+    G.hasShield = false;
+    addLog('warn', 'shield', 'Tarcza zatrzymała puls Golema', '0 :heart:');
+    renderHUD();
+    return;
+  }
+  G.hp = Math.max(0, G.hp - BOSS.pulseDamage);
+  addLog('damage', 'boss_tl', 'Puls Arch-Golema', `−${BOSS.pulseDamage} :heart:`);
+  const portrait = $('portrait');
+  portrait.classList.remove('pulse');
+  void portrait.offsetWidth;
+  portrait.classList.add('pulse');
+  shakeGrid('combat-shake-heavy', true);
+  renderHUD();
+  if (G.hp <= 0) {
+    G.gameOver = true;
+    setTimeout(() => playerDied(), 700);
+  }
+}
+
+function bossDefeated(idx) {
+  const b = G.boss;
+  b.alive = 0;
+  G.won = true;   // blokuje klikniecia na czas finalu
+  G.runes += BOSS.runeBonus;
+  persistProgress();
+  addLog('lvlup', 'boss_tl', 'Arch-Golem pokonany!', `+${BOSS.runeBonus} ✦`);
+  if (typeof Music !== 'undefined') Music.setMood({ boss: false, awake: false });
+  renderHUD();
+  setTimeout(() => {
+    const gc = $('grid-container');
+    gc.classList.remove('boss-death');
+    void gc.offsetWidth;
+    gc.classList.add('boss-death');
+    shakeGrid('combat-shake-brutal');
+    showOverlay(`:boss_full: ARCH-GOLEM POKONANY\n+${BOSS.runeBonus} ✦ Złotych Run`, 2000);
+  }, 700);
+  setTimeout(() => {
+    if (G.mode === 'campaign' && G.sector >= G.maxSectors) {
+      fadeToBlack(() => nextSector());
+      return;
+    }
+    // tryb nieskonczony: pod Golemem otwiera sie wlaz do dalszych sektorow
+    G.won = false;
+    G.keyFound = true;
+    G.hatchCell = idx;
+    G.cells[idx].item = 'hatch';
+    updateCell(idx);
+    renderInventory();
+    addLog('item', 'hatch_open', 'Pod Golemem otwiera się właz.');
+  }, 3000);
+}
+
+function shakeGrid(cls, damage = false) {
+  const gc = $('grid-container');
+  gc.classList.remove('flash-damage', 'combat-shake-light', 'combat-shake-heavy', 'combat-shake-brutal');
+  void gc.offsetWidth;
+  gc.classList.add(cls);
+  if (damage) gc.classList.add('flash-damage');
+}
+
+function pulseGrid() {
+  const gc = $('grid-container');
+  gc.classList.remove('wrath-pulse');
+  void gc.offsetWidth;
+  gc.classList.add('wrath-pulse');
+}
+
+// panel bossa w HUD: pieczecie, poziom Golema i licznik Gniewu
+function renderBossHUD() {
+  const panel = $('hud-boss');
+  if (!panel) return;
+  const b = G.boss;
+  panel.style.display = b ? '' : 'none';
+  if (!b) return;
+  let seals = '';
+  for (let i = 0; i < BOSS.seals; i++) seals += Sprites.html(i < BOSS.seals - b.sealsLeft ? 'seal_broken' : 'seal', 'hud-seal');
+  $('hud-seals').innerHTML = seals;
+  $('hud-boss-lv').textContent = b.alive > 0 ? `Lv.${b.level}` : '—';
+  $('hud-boss-lv').classList.toggle('danger', b.alive > 0 && b.level > G.atk);
+  const every = b.awake ? BOSS.wrathAwake : BOSS.wrathEvery;
+  let pips = '';
+  for (let i = 0; i < every; i++) pips += `<span class="wrath-pip${i < b.wrath ? ' on' : ''}"></span>`;
+  $('hud-wrath').innerHTML = pips;
+  $('hud-wrath-label').textContent = b.awake ? 'PULS' : 'GNIEW';
+  panel.classList.toggle('awake', b.awake);
 }
 
 // EXP & LEVELING
@@ -1309,24 +1634,36 @@ function nextSector() {
 // DEATH
 function playerDied() {
   G.gameOver = true;
-  $('ds-sector').textContent = G.sector;
+  if (typeof Music !== 'undefined') Music.sting();
+  $('ds-sector').textContent = G.sector;   // sektor smierci (przed ewentualnym cofnieciem do Wezla)
   $('ds-level').textContent = G.level;
   $('ds-atk').textContent = G.atk;
   $('ds-exp').textContent = G.exp;
   $('ds-runes').textContent = G.runes;
 
-  const backToNode = G.mode === 'campaign' && G.nodeUnlocked;
-  $('death-primary').textContent = backToNode ? '→ BEZPIECZNY WĘZEŁ' : '↻ ZACZNIJ OD NOWA';
-  $('death-note').textContent = backToNode
-    ? 'Wracasz do Bezpiecznego Węzła: zdrowie i mana zostaną w pełni odnowione.'
-    : (G.mode === 'campaign'
-        ? `Bezpieczny Węzeł odblokujesz po ukończeniu sektora ${NODE_AFTER_SECTOR}. Zaczynasz kampanię od nowa, ale Złote Runy i ulepszenia zostają.`
-        : 'Koniec rundy. Złote Runy i ulepszenia zostają.');
+  // po odblokowaniu Wezla smierc zuzywa jedna Iskre; bez Iskier wyprawa sie konczy
+  G.backToNode = G.mode === 'campaign' && G.nodeUnlocked && G.sparks > 0;
+  if (G.backToNode) {
+    G.sparks--;
+    G.sector = NODE_AFTER_SECTOR + 1;   // Wezel lezy za sektorem 5, wiec kolejna proba zaczyna sie od sektora 6
+  }
+  $('death-primary').textContent = G.backToNode ? '→ BEZPIECZNY WĘZEŁ' : '↻ ZACZNIJ OD NOWA';
+  let note;
+  if (G.backToNode) {
+    note = `Wracasz do Bezpiecznego Węzła i zaczynasz znów od sektora ${NODE_AFTER_SECTOR + 1}. Zdrowie i mana zostaną odnowione, poziom zostaje. Pozostałe Iskry Węzła: ${G.sparks}.`;
+  } else if (G.mode === 'campaign' && G.nodeUnlocked) {
+    note = 'Iskry Węzła wygasły. Wyprawa skończona: zaczynasz kampanię od nowa, ale Złote Runy i ulepszenia zostają.';
+  } else if (G.mode === 'campaign') {
+    note = `Bezpieczny Węzeł odblokujesz po ukończeniu sektora ${NODE_AFTER_SECTOR}. Zaczynasz kampanię od nowa, ale Złote Runy i ulepszenia zostają.`;
+  } else {
+    note = 'Koniec rundy. Złote Runy i ulepszenia zostają.';
+  }
+  $('death-note').textContent = note;
   showScreen('death');
 }
 
 function deathPrimary() {
-  if (G.mode === 'campaign' && G.nodeUnlocked) showNode('node');
+  if (G.backToNode) showNode('node');
   else startGame(G.mode);
 }
 

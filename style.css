@@ -1365,3 +1365,123 @@ body::after {
 .btn-main.secondary { color: var(--c-bone); border-color: #4a3e2a; text-shadow: none; }
 #hud { background: rgba(11, 10, 15, 0.96); }
 #side-panel { background: rgba(11, 10, 15, 0.96); }
+
+/* =====================================================================
+   ARCH-GOLEM (sektor bossa)
+   ===================================================================== */
+/* czesci Golema: cwiartki sprite'a 32x32 skladaja sie w jedna postac na 2x2 polach */
+.cell.boss-part .echo-reveal .spr {
+  width: 100%;
+  height: 100%;
+  filter: drop-shadow(0 0 4px #ff1a1a66);
+}
+.cell.boss-part .echo-reveal { background: transparent; }
+.cell.covered.echoed.boss-part {
+  background-image: linear-gradient(rgba(70, 0, 10, 0.55), rgba(20, 0, 4, 0.8)), var(--stone);
+  border-color: #6a1418;
+}
+/* zeby cwiartki stykaly sie bez szwu, obrys mamy tylko na zewnatrz bloku */
+.cell.boss-part.boss-tl { border-right-color: transparent; border-bottom-color: transparent; }
+.cell.boss-part.boss-tr { border-left-color: transparent; border-bottom-color: transparent; }
+.cell.boss-part.boss-bl { border-right-color: transparent; border-top-color: transparent; }
+.cell.boss-part.boss-br { border-left-color: transparent; border-top-color: transparent; }
+.cell.boss-part.boss-awake { animation: bossBreath 2.2s ease-in-out infinite; }
+@keyframes bossBreath {
+  0%, 100% { box-shadow: inset 0 0 6px #ff1a1a44; }
+  50% { box-shadow: inset 0 0 14px #ff1a1aaa; }
+}
+/* poziom czesci w rogu (porownaj z ATK) */
+.boss-lv {
+  position: absolute;
+  bottom: 1px;
+  right: 3px;
+  z-index: 3;
+  font-family: 'Tiny5', monospace;
+  font-size: calc(var(--cell-size) * 0.3);
+  color: #ffd0c8;
+  text-shadow: 1px 1px 0 #000, 0 0 4px #ff1a1a;
+  pointer-events: none;
+}
+
+/* Pieczec Rdzenia na odkrytym polu */
+.cell.seal-cell { box-shadow: inset 0 0 10px #ff1a1a55, 0 0 8px #ff1a1a66; animation: sealGlow 1.8s ease-in-out infinite; }
+@keyframes sealGlow {
+  0%, 100% { box-shadow: inset 0 0 8px #ff1a1a44, 0 0 6px #ff1a1a44; }
+  50% { box-shadow: inset 0 0 14px #ff1a1a99, 0 0 12px #ff1a1a88; }
+}
+
+/* animacja kafelka przy ciosie w Golema */
+.cell.anim-boss { animation: animBoss 0.6s ease; }
+@keyframes animBoss {
+  0% { background: #5a0000; box-shadow: 0 0 30px #ff1a1a, inset 0 0 14px #ff8a3d; transform: scale(1.3); }
+  40% { background: #2a0004; transform: scale(0.94); }
+  100% { box-shadow: none; transform: scale(1); }
+}
+.ring-boss { border-color: #ff1a1a; border-width: 4px; }
+
+/* puls Gniewu: plansza na moment robi sie czerwona */
+#grid-container.wrath-pulse { animation: wrathPulse 0.7s ease; }
+@keyframes wrathPulse {
+  0%, 100% { filter: none; }
+  35% { filter: brightness(0.75) sepia(1) hue-rotate(-35deg) saturate(4); }
+}
+/* przebudzenie i smierc Golema */
+#grid-container.boss-wake { animation: bossWake 1.2s ease; }
+@keyframes bossWake {
+  0% { filter: none; }
+  20% { filter: brightness(0.3) sepia(1) hue-rotate(-40deg) saturate(6); }
+  60% { filter: brightness(0.6) sepia(1) hue-rotate(-40deg) saturate(4); }
+  100% { filter: none; }
+}
+#grid-container.boss-death { animation: bossDeath 1.6s ease; }
+@keyframes bossDeath {
+  0% { filter: none; }
+  15% { filter: brightness(3) saturate(0); }
+  45% { filter: brightness(0.4) sepia(1) hue-rotate(-40deg) saturate(5); }
+  100% { filter: none; }
+}
+
+/* panel bossa w HUD */
+.hud-boss {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 2px 10px;
+  border-left: 1px solid #3a1418;
+  border-right: 1px solid #3a1418;
+  background: linear-gradient(180deg, rgba(60, 0, 8, 0.35), rgba(20, 0, 4, 0.2));
+}
+.hud-boss-col { display: flex; flex-direction: column; gap: 3px; align-items: center; }
+.hud-seals { display: flex; gap: 2px; }
+.hud-seals .spr { width: 16px; height: 16px; }
+.hud-boss-lv {
+  font-family: 'Tiny5', monospace;
+  font-size: 14px;
+  color: #c8b890;
+}
+.hud-boss-lv.danger { color: #ff5a4a; text-shadow: 0 0 6px #ff1a1a; }
+.hud-wrath { display: flex; gap: 2px; }
+.wrath-pip { width: 6px; height: 8px; background: #2a1418; border: 1px solid #4a1a20; }
+.wrath-pip.on { background: #a01a1a; border-color: #ff3b3b; }
+.hud-boss.awake .wrath-pip { width: 9px; }
+.hud-boss.awake .wrath-pip.on { background: #ff3b3b; box-shadow: 0 0 6px #ff1a1a; animation: pipThrob 0.8s ease-in-out infinite; }
+@keyframes pipThrob { 50% { opacity: 0.6; } }
+
+/* portret Golema na planszy przejscia */
+.si-boss { display: none; }
+.si-boss.on { display: block; }
+.si-boss .spr { width: 128px; height: 128px; filter: drop-shadow(0 0 18px #ff1a1a55); }
+.sector-intro.reveal .si-boss { animation: introIn 1.4s ease forwards; }
+.sector-intro.boss .si-name { color: #ff5a4a; text-shadow: 0 0 20px #ff1a1a66, 3px 3px 0 #000; }
+/* cwiartki zachodza na 2-pikselowa przerwe miedzy polami, wiec Golem wyglada jak jedna bryla */
+.cell.boss-part.boss-tl .echo-reveal { right: -2px; bottom: -2px; z-index: 1; }
+.cell.boss-part.boss-tr .echo-reveal { left: -2px; bottom: -2px; z-index: 1; }
+.cell.boss-part.boss-bl .echo-reveal { right: -2px; top: -2px; z-index: 1; }
+.cell.boss-part.boss-br .echo-reveal { left: -2px; top: -2px; z-index: 1; }
+
+/* pokonany Golem na ekranie zwyciestwa */
+.win-boss .spr { width: 96px; height: 96px; filter: grayscale(0.85) brightness(0.55) drop-shadow(0 0 12px #000); }
+
+/* przycisk muzyki: przekreslony, gdy wyciszona */
+.music-btn.off { opacity: 0.45; text-decoration: line-through; }
+.hud-help.music-btn { margin-left: 4px; }

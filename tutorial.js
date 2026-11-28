@@ -85,7 +85,8 @@ const Tutorial = (() => {
       text: () => `
         <p><b>${S('mimic')} Mimik</b> ma poziom 0, więc nie dodaje nic do cyfr i udaje puste pole. Kliknięty bez Echokacji zabiera 1 ${S('heart')}. Na każdym sektorze jest ich tylko kilka. Gdy nie masz pewności, użyj Echokacji.</p>
         <p>Za każdy sektor dostajesz <b>${S('rune')} Złote Runy</b>. Między sektorami wydasz je na <b>ulepszenia trwałe</b> (zostają po śmierci) albo na <b>zapasy</b>, które ratują bieżącą wyprawę.</p>
-        <p>Po <b>sektorze 5</b> czeka <b>Bezpieczny Węzeł</b>: pełne zdrowie i mana, a w kampanii wracasz tam po śmierci.</p>`,
+        <p>Po <b>sektorze 5</b> czeka <b>Bezpieczny Węzeł</b>: pełne zdrowie i mana. W kampanii po śmierci wracasz tam i zaczynasz znów od <b>sektora 6</b>, ale tylko <b>3 razy</b> na wyprawę (Iskry Węzła).</p>
+        <p>Na samym dnie śpi <b>${S('boss_full_sleep')} Arch-Golem</b>. Osłabiają go tylko <b>${S('seal')} Pieczęcie Rdzenia</b>.</p>`,
     },
   ];
 

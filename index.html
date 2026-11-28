@@ -39,6 +39,7 @@
         LPM: odkryj pole &nbsp;|&nbsp; PPM: Znak Słabości<br>
         [1] Znak &nbsp;[2] Echokacja &nbsp;[3] Dezintegracja
       </div>
+      <button class="link-btn music-btn music-link" onclick="Music.toggle()">♪ muzyka</button>
       <button class="link-btn" onclick="resetProgress()">↺ resetuj postęp (runy i ulepszenia)</button>
     </div>
   </div>
@@ -144,11 +145,28 @@
         </div>
       </div>
 
+      <!-- panel Arch-Golema (tylko w sektorze bossa): pieczecie, poziom, licznik Gniewu -->
+      <div class="hud-boss" id="hud-boss" style="display:none">
+        <div class="hud-boss-col">
+          <div class="hud-label">PIECZĘCIE</div>
+          <div class="hud-seals" id="hud-seals"></div>
+        </div>
+        <div class="hud-boss-col">
+          <div class="hud-label">GOLEM</div>
+          <div class="hud-boss-lv" id="hud-boss-lv">Lv.0</div>
+        </div>
+        <div class="hud-boss-col">
+          <div class="hud-label" id="hud-wrath-label">GNIEW</div>
+          <div class="hud-wrath" id="hud-wrath"></div>
+        </div>
+      </div>
+
       <div class="hud-runes" id="hud-runes" title="Złote Runy">✦ 0</div>
       <div class="hud-sector" id="hud-sector">
         SEKTOR 1<br>
         <span style="color:#444466;font-size:6px;">MATRYCA CIENI</span>
       </div>
+      <button class="hud-help music-btn" onclick="Music.toggle()" title="Wycisz muzykę">♪</button>
       <button class="hud-help" onclick="Tutorial.open()" title="Jak grać?">?</button>
     </div>
 
@@ -234,6 +252,7 @@
        EKRAN ZWYCIĘSTWA
   ================================================================ -->
   <div id="screen-win" class="screen">
+    <div class="win-boss"><span data-sprite="boss_full_sleep"></span></div>
     <div class="win-title">✦ MATRYCA ZNEUTRALIZOWANA ✦</div>
     <div style="font-size:16px;color:#888;text-align:center;">
       Arch-Golem Matrycy pokonany!<br>Wymiar ocalony.
@@ -270,6 +289,7 @@
 
   <!-- plansza przejscia miedzy sektorami (zejscie w ciemnosc) -->
   <div id="sector-intro" class="sector-intro" aria-live="polite">
+    <div class="si-boss" id="si-boss"></div>
     <div class="si-sector" id="si-sector"></div>
     <div class="si-name" id="si-name"></div>
   </div>
@@ -277,9 +297,10 @@
   <div id="overlay-msg"></div>
   <div id="tooltip"></div>
 
-  <!-- sprites.js i atmosphere.js musza byc wczytane przed game.js i tutorial.js -->
+  <!-- sprites.js, atmosphere.js i music.js musza byc wczytane przed game.js i tutorial.js -->
   <script src="sprites.js"></script>
   <script src="atmosphere.js"></script>
+  <script src="music.js"></script>
   <script src="game.js"></script>
   <script src="tutorial.js"></script>
 </body>
