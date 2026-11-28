@@ -8,6 +8,9 @@
 </head>
 <body>
 
+  <!-- warstwa klimatu (kurz, zar, oczy w ciemnosci) rysowana przez atmosphere.js -->
+  <canvas id="atmo" aria-hidden="true"></canvas>
+
   <!-- ================================================================
        EKRAN TYTUŁOWY
   ================================================================ -->
@@ -17,15 +20,22 @@
       <div class="corner-deco tr"></div>
       <div class="corner-deco bl"></div>
       <div class="corner-deco br"></div>
-      <div class="title-enemies">☠ ⚔ ♦ ⚔ ☠</div>
+      <!-- parada potworow (pixel-art z sprites.js) -->
+      <div class="title-enemies">
+        <span data-sprite="slime"></span>
+        <span data-sprite="guardian"></span>
+        <span data-sprite="brutal"></span>
+        <span data-sprite="specter"></span>
+        <span data-sprite="mimic"></span>
+      </div>
       <div class="title-logo">MINE-CRAWL</div>
       <div class="title-sub">TACTICAL DEFUSER</div>
       <div style="height:1px;width:100%;background:linear-gradient(90deg,transparent,var(--c-gold),transparent);opacity:0.4;margin:6px 0;"></div>
       <div class="title-info">Zejdź w głąb Matrycy Cieni.<br>Neutralizuj zagrożenia. Przeżyj.</div>
       <button class="btn-main" onclick="startGame('campaign')">▶ KAMPANIA</button>
       <button class="btn-main secondary" onclick="startGame('endless')">∞ TRYB NIESKOŃCZONY</button>
-      <button class="btn-main secondary" onclick="Tutorial.open()">❓ JAK GRAĆ</button>
-      <div class="title-info" style="font-size:11px;color:#333355;margin-top:8px;">
+      <button class="btn-main secondary" onclick="Tutorial.open()">? JAK GRAĆ</button>
+      <div class="title-info" style="font-size:11px;color:#4a4450;margin-top:8px;">
         LPM: odkryj pole &nbsp;|&nbsp; PPM: Znak Słabości<br>
         [1] Znak &nbsp;[2] Echokacja &nbsp;[3] Dezintegracja
       </div>
@@ -39,10 +49,10 @@
   <div id="screen-node" class="screen">
     <div class="node-title" id="node-title">⬡ BEZPIECZNY WĘZEŁ ⬡</div>
     <div class="node-panel">
-      <div class="corner-deco tl" style="border-color:#2a6a2a;"></div>
-      <div class="corner-deco tr" style="border-color:#2a6a2a;"></div>
-      <div class="corner-deco bl" style="border-color:#2a6a2a;"></div>
-      <div class="corner-deco br" style="border-color:#2a6a2a;"></div>
+      <div class="corner-deco tl" style="border-color:#5a4520;"></div>
+      <div class="corner-deco tr" style="border-color:#5a4520;"></div>
+      <div class="corner-deco bl" style="border-color:#5a4520;"></div>
+      <div class="corner-deco br" style="border-color:#5a4520;"></div>
       <div class="node-runes-row">Ξ Δ Ω Σ Φ Ψ Ξ Δ Ω Σ Φ Ψ Ξ Δ Ω Σ Φ Ψ</div>
 
       <div class="node-note" id="node-note"></div>
@@ -50,35 +60,35 @@
       <!-- Zasoby gracza -->
       <div class="node-resources">
         <div class="node-resource">
-          <span class="icon">💀</span>
+          <span class="icon" data-sprite="skull"></span>
           <div>
             <div style="font-size:12px;color:#888;">Sektor</div>
             <div class="val" id="node-sector">-</div>
           </div>
         </div>
         <div class="node-resource">
-          <span class="icon">💛</span>
+          <span class="icon" data-sprite="rune"></span>
           <div>
             <div style="font-size:12px;color:#888;">Złote Runy</div>
             <div class="val" id="node-runes">0</div>
           </div>
         </div>
         <div class="node-resource">
-          <span class="icon">❤</span>
+          <span class="icon" data-sprite="potion"></span>
           <div>
             <div style="font-size:12px;color:#888;">Zdrowie</div>
             <div class="val" id="node-hp">3/3</div>
           </div>
         </div>
         <div class="node-resource">
-          <span class="icon">💎</span>
+          <span class="icon" data-sprite="crystal"></span>
           <div>
             <div style="font-size:12px;color:#888;">Mana</div>
             <div class="val" id="node-mp">5/5</div>
           </div>
         </div>
         <div class="node-resource">
-          <span class="icon">⭐</span>
+          <span class="icon" data-sprite="star"></span>
           <div>
             <div style="font-size:12px;color:#888;">Poziom</div>
             <div class="val" id="node-level">1</div>
@@ -86,36 +96,17 @@
         </div>
       </div>
 
-      <!-- Sklepy ulepszenia -->
-      <div class="node-shops">
-        <div class="node-shop" id="shop-atk">
-          <div class="icon-big">⚔</div>
-          <h3>STACJA DEFUZERÓW</h3>
-          <p>+1 ATK bazowy na starcie</p>
-          <div class="cost" id="shop-atk-cost">50 ✦</div>
-          <button class="node-btn" id="btn-buy-atk" onclick="buyUpgrade('atk')">KUP</button>
-        </div>
-        <div class="node-shop" id="shop-hp">
-          <div class="icon-big">🧪</div>
-          <h3>SYNTEZATOR ALCHEMICZNY</h3>
-          <p>Lepsze mikstury (+2 HP)</p>
-          <div class="cost" id="shop-hp-cost">40 ✦</div>
-          <button class="node-btn" id="btn-buy-hp" onclick="buyUpgrade('hp')">KUP</button>
-        </div>
-        <div class="node-shop" id="shop-arch">
-          <div class="icon-big">📖</div>
-          <h3>ARCHIWUM MATRYCY</h3>
-          <p>Wrogowie drop +5 EXP</p>
-          <div class="cost" id="shop-arch-cost">30 ✦</div>
-          <button class="node-btn" id="btn-buy-arch" onclick="buyUpgrade('arch')">KUP</button>
-        </div>
-      </div>
+      <!-- Sklep: karty generuje renderShop() w game.js -->
+      <div class="shop-section-title">ULEPSZENIA TRWAŁE <span>zostają po śmierci, a każda wyprawa startuje z 3 HP</span></div>
+      <div class="node-shops" id="shop-meta"></div>
+      <div class="shop-section-title">ZAPASY NA TĘ WYPRAWĘ <span>działają od razu, można kupować wielokrotnie</span></div>
+      <div class="node-shops supplies" id="shop-supplies"></div>
 
       <div style="display:flex;gap:10px;">
-        <button class="node-btn" id="node-continue" style="color:#66bb6a;border-color:#2a6a2a;" onclick="continueFromNode()">▶ WEJDŹ DO SEKTORA</button>
-        <button class="node-btn" style="color:#888;border-color:#333;" onclick="showTitle()">↩ MENU</button>
+        <button class="node-btn" id="node-continue" style="color:#d8a848;border-color:#5a4520;" onclick="continueFromNode()">▶ WEJDŹ DO SEKTORA</button>
+        <button class="node-btn" style="color:#807868;border-color:#3a3228;" onclick="showTitle()">↩ MENU</button>
       </div>
-      <div id="node-msg" style="font-size:14px;color:#66bb6a;text-align:center;min-height:18px;"></div>
+      <div id="node-msg" style="font-size:14px;color:#d8a848;text-align:center;min-height:18px;"></div>
     </div>
   </div>
 
@@ -126,7 +117,7 @@
 
     <!-- HUD górny -->
     <div id="hud">
-      <div class="portrait" id="portrait">🧙</div>
+      <div class="portrait" id="portrait"><span data-sprite="wizard"></span></div>
 
       <div class="hud-stat" style="flex-direction:column;gap:2px;">
         <div class="hud-label">HP</div>
@@ -136,7 +127,7 @@
       <div class="hud-stat" style="flex-direction:column;gap:2px;">
         <div class="hud-label">ATK</div>
         <div style="display:flex;align-items:center;gap:4px;">
-          <span style="font-size:16px;">⚔</span>
+          <span class="atk-icon" data-sprite="sword"></span>
           <span class="atk-val" id="atk-val">1</span>
         </div>
       </div>
@@ -177,7 +168,7 @@
           <div class="panel-title">ZAKLĘCIA</div>
 
           <button class="spell-btn" id="sb-flag" onclick="setSpell('flag')">
-            <span class="spell-icon" style="color:var(--c-flag)">⚑</span>
+            <span class="spell-icon" data-sprite="flag"></span>
             <span class="spell-info">
               <span class="spell-name">Znak Słabości</span>
               <span class="spell-cost">1 MP</span>
@@ -186,7 +177,7 @@
           </button>
 
           <button class="spell-btn" id="sb-echo" onclick="setSpell('echo')">
-            <span class="spell-icon" style="color:var(--c-echo)">👁</span>
+            <span class="spell-icon" data-sprite="eye"></span>
             <span class="spell-info">
               <span class="spell-name">Echokacja</span>
               <span class="spell-cost">2 MP</span>
@@ -195,31 +186,23 @@
           </button>
 
           <button class="spell-btn" id="sb-dezint" onclick="setSpell('dezint')">
-            <span class="spell-icon" style="color:var(--c-dezint)">💥</span>
+            <span class="spell-icon" data-sprite="blast"></span>
             <span class="spell-info">
               <span class="spell-name">Dezintegracja</span>
               <span class="spell-cost">4 MP</span>
             </span>
             <span class="spell-key">3</span>
           </button>
+          <div class="controls-hint"><b>LPM</b> odkryj · <b>Esc</b> anuluj zaklęcie</div>
         </div>
 
-        <div class="panel-section">
-          <div class="panel-title">STEROWANIE</div>
-          <div class="controls-hint">
-            <span><b>LPM</b> odkryj pole</span>
-            <span><b>PPM</b> Znak Słabości</span>
-            <span><b>1 2 3</b> wybór zaklęcia</span>
-            <span><b>Esc</b> anuluj zaklęcie</span>
-          </div>
-        </div>
 
         <div class="panel-section">
           <div class="panel-title">INWENTARZ</div>
           <div class="inv-grid" id="inv-grid"></div>
         </div>
 
-        <div class="panel-section" style="padding-bottom:4px;">
+        <div class="panel-section log-head">
           <div class="panel-title">LOG WALKI</div>
         </div>
         <div id="combat-log"></div>
@@ -255,7 +238,7 @@
     <div style="font-size:16px;color:#888;text-align:center;">
       Arch-Golem Matrycy pokonany!<br>Wymiar ocalony.
     </div>
-    <div class="death-stats" style="border-color:#2a4a2a;background:#0d1a10;">
+    <div class="death-stats">
       <div class="death-stat"><span>Sektory ukończone:</span> <span id="ws-sectors" style="color:var(--c-gold2);">-</span></div>
       <div class="death-stat"><span>Końcowy poziom:</span>    <span id="ws-level"   style="color:var(--c-gold2);">-</span></div>
       <div class="death-stat"><span>Złote Runy:</span>        <span id="ws-runes"   style="color:var(--c-gold2);">-</span></div>
@@ -285,9 +268,18 @@
     </div>
   </div>
 
+  <!-- plansza przejscia miedzy sektorami (zejscie w ciemnosc) -->
+  <div id="sector-intro" class="sector-intro" aria-live="polite">
+    <div class="si-sector" id="si-sector"></div>
+    <div class="si-name" id="si-name"></div>
+  </div>
+
   <div id="overlay-msg"></div>
   <div id="tooltip"></div>
 
+  <!-- sprites.js i atmosphere.js musza byc wczytane przed game.js i tutorial.js -->
+  <script src="sprites.js"></script>
+  <script src="atmosphere.js"></script>
   <script src="game.js"></script>
   <script src="tutorial.js"></script>
 </body>

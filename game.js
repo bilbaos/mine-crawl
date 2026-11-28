@@ -13,8 +13,8 @@ const G = {
   mp: 5, maxMp: 5,
   exp: 0, expNext: 75,
   level: 1,
-  // ulepszenia trwale (meta) i waluta
-  meta: { atk: false, hp: false, arch: false },
+  // poziomy ulepszen trwalych (meta) i waluta
+  meta: {},   // wypelniane w INIT z zapisu (patrz META_DEFAULT)
   runes: 0,
   nodeUnlocked: false,   // Bezpieczny Wezel odblokowuje sie po sektorze NODE_AFTER_SECTOR
   nodeScreenKind: 'node',
@@ -30,19 +30,36 @@ const G = {
   // zaklecie / tarcza
   activeSpell: null,
   hasShield: false,
+  supplyBought: {},   // ile razy w tej wyprawie kupiono kazdy zapas (podnosi cene)
 };
 
 // ---------- ZAPIS POSTEPU (localStorage, z bezpiecznym fallbackiem) ----------
+// poziomy wszystkich ulepszen trwalych na starcie (0 = niekupione)
+const META_DEFAULT = { exp: 0, vein: 0, mp: 0, alch: 0, hp: 0, scan: 0, atk: 0 };
+
+// zamienia zapis meta na poziomy; obsluguje tez stary format (true/false z pierwszej wersji sklepu)
+function migrateMeta(m) {
+  const out = Object.assign({}, META_DEFAULT);
+  m = m || {};
+  Object.keys(META_DEFAULT).forEach(k => {
+    if (typeof m[k] === 'number') out[k] = m[k];
+  });
+  if (m.atk === true) out.atk = 1;    // stare "ATK bazowy +1"
+  if (m.hp === true) out.alch = 1;    // stare "Lepsze mikstury" to teraz Syntezator Alchemiczny
+  if (m.arch === true) out.exp = 1;   // stare "Archiwum Matrycy" to teraz bonus % EXP
+  return out;
+}
+
 const Save = {
   KEY: 'mineCrawl.save.v1',
-  data: { runes: 0, meta: { atk: false, hp: false, arch: false }, tutorialSeen: false },
+  data: { runes: 0, meta: Object.assign({}, META_DEFAULT), tutorialSeen: false },
   load() {
     try {
       const raw = window.localStorage.getItem(this.KEY);
       if (raw) {
         const d = JSON.parse(raw);
         this.data.runes = Number(d.runes) || 0;
-        this.data.meta = Object.assign({ atk: false, hp: false, arch: false }, d.meta || {});
+        this.data.meta = migrateMeta(d.meta);
         this.data.tutorialSeen = !!d.tutorialSeen;
       }
     } catch (e) { /* brak dostepu do storage - gra dziala dalej bez zapisu */ }
@@ -61,12 +78,55 @@ function persistProgress() {
 // ---------- KONFIGURACJA ----------
 const NODE_AFTER_SECTOR = 5;     // Bezpieczny Wezel pojawia sie dopiero po ukonczeniu tego sektora
 const MIMIC_AMBUSH_DAMAGE = 1;   // zasadzka mimika zawsze zabiera 1 HP
+const START_HP = 3;              // kazda wyprawa zaczyna sie z 3 zyciami, niezaleznie od ulepszen
 
+// ULEPSZENIA TRWALE: kilka poziomow, kazdy drozszy; zostaja po smierci.
+// Pelna kampania daje 370 run (ok. 445 ze Zlota Zyla), a wykupienie wszystkiego kosztuje 1890,
+// czyli ok. 5 pelnych kampanii; wczesniejsze smierci daja mniej, wiec sklep zostaje przydatny dlugo.
+// Kolejnosc = kolejnosc kart w sklepie.
 const UPGRADES = {
-  atk:  { cost: 50, name: 'ATK bazowy +1' },
-  hp:   { cost: 40, name: 'Lepsze mikstury (+2 HP)' },
-  arch: { cost: 30, name: 'Bonus EXP +5 za wroga' },
+  exp:  { name: 'ARCHIWUM MATRYCY',       sprite: 'book',    costs: [40, 90, 160],
+          label: 'EXP z wrogów',            val: l => `+${l * 15}%` },
+  vein: { name: 'ZŁOTA ŻYŁA',             sprite: 'rune',    costs: [50, 120],
+          label: 'Runy za sektor',          val: l => `+${l * 10}%` },
+  mp:   { name: 'REZERWUAR MANY',         sprite: 'crystal', costs: [50, 110],
+          label: 'Maks. MP',                val: l => `${5 + l}` },
+  alch: { name: 'SYNTEZATOR ALCHEMICZNY', sprite: 'potion',  costs: [60, 150],
+          label: 'Mikstura leczy',          val: l => `${1 + l} HP` },
+  hp:   { name: 'PANCERZ DEFUZERA',       sprite: 'heart',   costs: [80, 160, 250],
+          label: 'Limit HP',                val: l => `${START_HP + l}` },
+  scan: { name: 'SONAR MATRYCY',          sprite: 'eye',     costs: [90, 180],
+          label: 'Pola prześwietlone na starcie', val: l => `${l * 2}` },
+  atk:  { name: 'OSTRZE ROZPADU',         sprite: 'sword',   costs: [300],
+          label: 'ATK bazowy',              val: l => `${1 + l}` },
 };
+
+// ZAPASY: jednorazowe zakupy na biezaca wyprawe, dzialaja od razu i mozna je kupowac wielokrotnie.
+// Kazdy kolejny zakup tego samego zapasu w jednej wyprawie drozeje o "step" (licznik G.supplyBought),
+// wiec nie da sie tanio leczyc do pelna w kazdym sklepie.
+// Konkuruja o te same runy co ulepszenia trwale: przezyc teraz albo zainwestowac w kolejne podejscia.
+const SUPPLIES = {
+  potion:  { name: 'MIKSTURA',          sprite: 'potion',  cost: 25, step: 10,
+             desc: () => `+${1 + G.meta.alch} HP od razu`, can: () => G.hp < G.maxHp, blocked: 'Pełne HP',
+             apply: () => { G.hp = Math.min(G.maxHp, G.hp + 1 + G.meta.alch); } },
+  crystal: { name: 'KRYSZTAŁ MANY',     sprite: 'crystal', cost: 15, step: 5,
+             desc: () => '+2 MP od razu', can: () => G.mp < G.maxMp, blocked: 'Pełna mana',
+             apply: () => { G.mp = Math.min(G.maxMp, G.mp + 2); } },
+  shield:  { name: 'TARCZA KINETYCZNA', sprite: 'shield',  cost: 35, step: 15,
+             desc: () => 'Pochłania najbliższy cios', can: () => !G.hasShield, blocked: 'Masz już tarczę',
+             apply: () => { G.hasShield = true; } },
+};
+
+// aktualna cena zapasu w tej wyprawie
+function supplyCost(key) {
+  return SUPPLIES[key].cost + SUPPLIES[key].step * (G.supplyBought[key] || 0);
+}
+
+// koszt nastepnego poziomu ulepszenia albo null, gdy wykupione do konca
+function upgradeCost(key) {
+  const lvl = G.meta[key] || 0;
+  return lvl < UPGRADES[key].costs.length ? UPGRADES[key].costs[lvl] : null;
+}
 
 // konfiguracja sektorow: rozmiar, gestosc wrogow (razem z mimikami),
 // STALA liczba mimikow na sektor oraz wagi pozostalych przeciwnikow
@@ -83,12 +143,35 @@ const SECTORS = [
   { cols: 12, rows: 12, density: 0.25, mimics: 2, weights: { brutal: 4, specter: 6 } },            // sektor finalowy
 ];
 
+// nazwy sektorow pokazywane na planszy przejscia, w HUD i w logu
+const SECTOR_NAMES = [
+  'Przedsionek Cieni', 'Zalane Korytarze', 'Kuźnia Strażników', 'Krypty Matrycy', 'Cicha Studnia',
+  'Ossuarium', 'Szepczące Głębie', 'Komora Widm', 'Gardziel Otchłani', 'Serce Matrycy',
+];
+
+function sectorName(s) {
+  return s <= SECTOR_NAMES.length ? SECTOR_NAMES[s - 1] : `Otchłań ${s - SECTOR_NAMES.length}`;
+}
+
+// glebokosc 0..1 przyciemnia winiete i klimat (sektor 1 = 0, sektor 10 i dalej = 1)
+function sectorDepth(s) { return Math.min(1, (s - 1) / 9); }
+
+// grafika kazdego wroga to sprite o nazwie takiej jak jego typ (sprites.js)
 const ENEMIES = {
-  slime:    { level:1, exp:11, emoji:'🟢', name:'Szlam Wymiarowy' },
-  guardian: { level:function(s){ return s>=6?3:2; }, exp:16, emoji:'🤖', name:'Spaczony Strażnik' },
-  brutal:   { level:function(s){ return s<=4?3:(s<=7?4:5); }, exp:26, emoji:'👹', name:'Brutal Matrycy' },
-  specter:  { level:function(s){ return Math.min(9, 4 + Math.floor(s/2)); }, exp:38, emoji:'👻', name:'Widmo Przestrzenne' },
-  mimic:    { level:0, exp:24, emoji:'📦', name:'Skrzynia (Mimik)' },
+  slime:    { level:1, exp:11, name:'Szlam Wymiarowy' },
+  guardian: { level:function(s){ return s>=6?3:2; }, exp:16, name:'Spaczony Strażnik' },
+  brutal:   { level:function(s){ return s<=4?3:(s<=7?4:5); }, exp:26, name:'Brutal Matrycy' },
+  specter:  { level:function(s){ return Math.min(9, 4 + Math.floor(s/2)); }, exp:38, name:'Widmo Przestrzenne' },
+  mimic:    { level:0, exp:24, name:'Skrzynia (Mimik)' },
+};
+
+// nazwy przedmiotow do logu (np. po Echokacji)
+const ITEM_NAMES = {
+  key: 'Klucz Sektora',
+  hatch: 'Właz',
+  potion: 'Mikstura zdrowia',
+  crystal: 'Kryształ Many',
+  shield: 'Tarcza Kinetyczna',
 };
 
 const CELL_COVERED = 0, CELL_REVEALED = 1;
@@ -101,6 +184,12 @@ const CONTENT_CRYSTAL = 'crystal';
 const CONTENT_SHIELD = 'shield';
 
 const $ = (id) => document.getElementById(id);
+
+// sprite przedmiotu lezacego na polu; wlaz zmienia wyglad po zdobyciu klucza
+function itemSprite(item) {
+  if (item === 'hatch') return G.keyFound ? 'hatch_open' : 'hatch_locked';
+  return item;
+}
 
 
 // ---------- EKRANY I SKLEP ----------
@@ -137,44 +226,104 @@ function updateNodeUI() {
   $('node-hp').textContent = `${G.hp}/${G.maxHp}`;
   $('node-mp').textContent = `${G.mp}/${G.maxMp}`;
   $('node-continue').textContent = `▶ WEJDŹ DO SEKTORA ${G.sector}`;
+  renderShop();
+  $('node-msg').textContent = '';
+}
 
+// karty sklepu budowane od nowa po kazdym zakupie
+function renderShop() {
+  const meta = $('shop-meta');
+  meta.innerHTML = '';
   Object.keys(UPGRADES).forEach(key => {
     const up = UPGRADES[key];
-    const btn = $('btn-buy-' + key);
-    const lbl = $('shop-' + key + '-cost');
-    if (G.meta[key]) {
-      btn.textContent = '✓ KUPIONO';
-      btn.disabled = true;
-      lbl.textContent = '—';
-    } else {
-      btn.textContent = 'KUP';
-      btn.disabled = G.runes < up.cost;
-      lbl.textContent = up.cost + ' ✦';
-    }
+    const lvl = G.meta[key] || 0;
+    const max = up.costs.length;
+    const cost = upgradeCost(key);
+    const pips = Array.from({ length: max }, (_, i) => `<span class="pip${i < lvl ? ' on' : ''}"></span>`).join('');
+    const card = document.createElement('div');
+    card.className = 'node-shop' + (cost === null ? ' maxed' : '');
+    card.innerHTML = `
+      ${Sprites.html(up.sprite, 'icon-big')}
+      <div class="shop-info">
+        <div class="shop-head"><h3>${up.name}</h3><div class="shop-pips">${pips}</div></div>
+        <p>${up.label}: ${up.val(lvl)}${cost === null ? '' : ` <b>→ ${up.val(lvl + 1)}</b>`}</p>
+      </div>
+      <div class="shop-buy"><div class="cost">${cost === null ? 'MAKS.' : cost + ' ✦'}</div></div>`;
+    const btn = document.createElement('button');
+    btn.className = 'node-btn';
+    btn.textContent = cost === null ? '✓ MAKS.' : 'KUP';
+    btn.disabled = cost === null || G.runes < cost;
+    btn.addEventListener('click', () => buyUpgrade(key));
+    card.querySelector('.shop-buy').appendChild(btn);
+    meta.appendChild(card);
   });
-  $('node-msg').textContent = '';
+
+  const sup = $('shop-supplies');
+  sup.innerHTML = '';
+  Object.keys(SUPPLIES).forEach(key => {
+    const s = SUPPLIES[key];
+    const usable = s.can();
+    const card = document.createElement('div');
+    card.className = 'node-shop supply';
+    card.innerHTML = `
+      ${Sprites.html(s.sprite, 'icon-big')}
+      <div class="shop-info"><h3>${s.name}</h3><p>${usable ? s.desc() : s.blocked}</p></div>
+      <div class="shop-buy"><div class="cost">${supplyCost(key)} ✦</div></div>`;
+    const btn = document.createElement('button');
+    btn.className = 'node-btn';
+    btn.textContent = 'KUP';
+    btn.disabled = !usable || G.runes < supplyCost(key);
+    btn.addEventListener('click', () => buySupply(key));
+    card.querySelector('.shop-buy').appendChild(btn);
+    sup.appendChild(card);
+  });
 }
 
 function buyUpgrade(type) {
   const up = UPGRADES[type];
-  if (!up || G.meta[type]) return;
-  if (G.runes < up.cost) {
+  const cost = up ? upgradeCost(type) : null;
+  if (cost === null) return;
+  if (G.runes < cost) {
     $('node-msg').textContent = 'Za mało Złotych Run!';
     return;
   }
-  G.runes -= up.cost;
-  G.meta[type] = true;
-  if (type === 'atk') {          // ulepszenie ataku dziala od razu, nie dopiero od nowej gry
-    G.baseAtk++;
-    G.atk = G.baseAtk;
-  }
+  G.runes -= cost;
+  G.meta[type] = (G.meta[type] || 0) + 1;
+  // ulepszenia statystyk dzialaja od razu, nie dopiero od nowej gry
+  if (type === 'atk') { G.baseAtk++; G.atk = G.baseAtk; }
+  if (type === 'hp') { G.maxHp++; }   // Pancerz podnosi limit HP, ale nie leczy
+  if (type === 'mp') { G.maxMp++; G.mp++; }
   persistProgress();
+  renderHUD();
   updateNodeUI();
-  $('node-msg').textContent = '✓ Odblokowano: ' + up.name;
+  $('node-msg').textContent = `✓ ${up.name}: ${up.label} ${up.val(G.meta[type])}`;
 }
 
-function canAffordAnyUpgrade() {
-  return Object.keys(UPGRADES).some(k => !G.meta[k] && G.runes >= UPGRADES[k].cost);
+function buySupply(type) {
+  const s = SUPPLIES[type];
+  if (!s || !s.can()) return;
+  const cost = supplyCost(type);
+  if (G.runes < cost) {
+    $('node-msg').textContent = 'Za mało Złotych Run!';
+    return;
+  }
+  G.runes -= cost;
+  G.supplyBought[type] = (G.supplyBought[type] || 0) + 1;
+  s.apply();
+  persistProgress();
+  renderHUD();
+  updateNodeUI();
+  $('node-msg').textContent = `✓ Kupiono: ${s.name.toLowerCase()}`;
+}
+
+// sklep miedzy sektorami pokazujemy tylko wtedy, gdy gracz moze w nim cos sensownie kupic
+function canAffordAnything() {
+  const meta = Object.keys(UPGRADES).some(k => {
+    const cost = upgradeCost(k);
+    return cost !== null && G.runes >= cost;
+  });
+  const supply = Object.keys(SUPPLIES).some(k => SUPPLIES[k].can() && G.runes >= supplyCost(k));
+  return meta || supply;
 }
 
 function continueFromNode() { startSector(); }
@@ -182,8 +331,8 @@ function continueFromNode() { startSector(); }
 function resetProgress() {
   if (!window.confirm('Usunąć Złote Runy, ulepszenia i postęp samouczka?')) return;
   G.runes = 0;
-  G.meta = { atk: false, hp: false, arch: false };
-  Save.data = { runes: 0, meta: { atk: false, hp: false, arch: false }, tutorialSeen: false };
+  G.meta = Object.assign({}, META_DEFAULT);
+  Save.data = { runes: 0, meta: Object.assign({}, META_DEFAULT), tutorialSeen: false };
   Save.save();
 }
 
@@ -193,13 +342,15 @@ function resetProgress() {
 function startGame(mode) {
   G.mode = mode;
   G.sector = 1;
-  G.maxHp = 3; G.hp = 3;
-  G.maxMp = 5; G.mp = 5;
-  G.baseAtk = 1 + (G.meta.atk ? 1 : 0);
+  // statystyki startowe = baza + poziomy ulepszen trwalych
+  G.maxHp = START_HP + G.meta.hp; G.hp = START_HP;   // Pancerz daje zapas na leczenie, start zawsze 3 HP
+  G.maxMp = 5 + G.meta.mp; G.mp = G.maxMp;
+  G.baseAtk = 1 + G.meta.atk;
   G.atk = G.baseAtk;
   G.exp = 0; G.expNext = 75;
   G.level = 1;
   G.hasShield = false;
+  G.supplyBought = {};
   G.nodeUnlocked = false;
   // Zlote Runy i ulepszenia meta zostaja miedzy podejsciami (waluta trwala)
 
@@ -241,10 +392,54 @@ function startSector() {
   showScreen('game');   // najpierw pokazujemy ekran, zeby poprawnie zmierzyc rozmiar planszy
   buildGrid(cfg);
   renderHUD();
-  addLog('info', `▶ Sektor ${G.sector} - ${getCellDesc(cfg)}`);
-  addLog('info', 'Kliknij pole aby zacząć eksplorację.');
+  const name = sectorName(G.sector);
+  logSector(G.sector, name);
+  addLog('info', '', `${cfg.cols}×${cfg.rows} · ${Math.round(cfg.density * 100)}% wrogów`);
+  addLog('info', '', 'Pierwszy krok jest bezpieczny.');
   $('hud-sector').innerHTML =
-    `SEKTOR ${G.sector}<br><span style="color:#444466;font-size:6px;">${G.mode==='endless'?'TRYB NIESKOŃCZONY':'KAMPANIA'}</span>`;
+    `SEKTOR ${G.sector}<br><span class="hud-sector-name">${name}</span>`;
+
+  // im glebiej, tym ciemniej i czerwieniej
+  const depth = sectorDepth(G.sector);
+  document.documentElement.style.setProperty('--depth', depth.toFixed(2));
+  if (typeof Atmos !== 'undefined') Atmos.setDepth(depth);
+  showSectorIntro(name);
+}
+
+// PRZEJSCIA MIEDZY SEKTORAMI
+let introTimer = null;
+
+// wygaszenie ekranu do czerni (np. po wejsciu do wlazu), potem callback
+function fadeToBlack(cb) {
+  const el = $('sector-intro');
+  el.classList.remove('reveal');
+  el.classList.add('show');
+  setTimeout(cb, 600);
+}
+
+// plansza "SEKTOR N / nazwa" na czarnym tle; klikniecie pomija
+function showSectorIntro(name) {
+  const el = $('sector-intro');
+  clearTimeout(introTimer);
+  $('si-sector').textContent = `SEKTOR ${G.sector}`;
+  $('si-name').textContent = name;
+  if (!el.classList.contains('show')) {
+    el.style.transition = 'none';   // z innego ekranu wchodzimy od razu w czern
+    el.classList.add('show');
+    void el.offsetWidth;
+    el.style.transition = '';
+  }
+  el.classList.remove('reveal');
+  void el.offsetWidth;
+  el.classList.add('reveal');
+  introTimer = setTimeout(hideSectorIntro, 1800);
+}
+
+function hideSectorIntro() {
+  clearTimeout(introTimer);
+  const el = $('sector-intro');
+  el.classList.remove('show');
+  setTimeout(() => el.classList.remove('reveal'), 600);
 }
 
 function getCellDesc(cfg) {
@@ -314,7 +509,8 @@ function placeEnemy(pos, type) {
   const eInfo = ENEMIES[type];
   const level = typeof eInfo.level === 'function' ? eInfo.level(G.sector) : eInfo.level;
   G.cells[pos].content = CONTENT_ENEMY;
-  G.cells[pos].enemy = { type, level, exp: eInfo.exp + (G.meta.arch ? 5 : 0), emoji: eInfo.emoji, name: eInfo.name };
+  const exp = Math.round(eInfo.exp * (1 + 0.15 * G.meta.exp));   // Archiwum Matrycy: +15% EXP za poziom
+  G.cells[pos].enemy = { type, level, exp, name: eInfo.name };
 }
 
 function pickWeightedEnemy(weightsObj) {
@@ -407,7 +603,12 @@ function renderGrid() {
   const maxCellH = Math.floor((availH - 40 - 8 - (G.rows - 1) * 2) / G.rows);
   const cellSize = Math.max(18, Math.min(maxCellW, maxCellH, 60));
 
+  // sprite 16x16 skalujemy o pelna wielokrotnosc, zeby piksele zostaly ostre
+  const sprTarget = cellSize * 0.8;
+  const sprSize = sprTarget >= 32 ? Math.floor(sprTarget / 16) * 16 : Math.round(sprTarget);
+
   document.documentElement.style.setProperty('--cell-size', cellSize+'px');
+  document.documentElement.style.setProperty('--spr-cell', sprSize+'px');
   grid.style.gridTemplateColumns = `repeat(${G.cols}, ${cellSize}px)`;
   grid.innerHTML = '';
 
@@ -427,9 +628,14 @@ function updateAllCells() {
   cells.forEach(el => updateCellEl(el, parseInt(el.dataset.idx)));
 }
 
+// wariant tekstury kafelka (kamien / posadzka), staly dla danego pola w sektorze
+function cellVariant(idx) {
+  return (((idx + 1) * 2654435761 + G.sector * 40503) >>> 0) % 3;
+}
+
 function updateCellEl(el, idx) {
   const c = G.cells[idx];
-  el.className = 'cell';
+  el.className = 'cell v' + cellVariant(idx);
   el.innerHTML = '';
   el.title = '';
 
@@ -443,21 +649,20 @@ function updateCellEl(el, idx) {
       const er = document.createElement('span');
       er.className = 'echo-reveal';
       if (c.content === CONTENT_ENEMY) {
-        er.textContent = c.enemy.emoji;
+        er.innerHTML = Sprites.html(c.enemy.type);
         er.title = c.enemy.name + ' Lv.' + c.enemy.level;
-      } else if (c.item === 'key') { er.textContent = '🗝'; }
-      else if (c.item === 'hatch') { er.textContent = '🚪'; }
-      else if (c.item === 'potion') { er.textContent = '🧪'; }
-      else if (c.item === 'crystal') { er.textContent = '💎'; }
-      else if (c.item === 'shield') { er.textContent = '🛡'; }
-      else { er.textContent = '·'; }
+      } else if (c.item) {
+        er.innerHTML = Sprites.html(itemSprite(c.item));
+        er.title = ITEM_NAMES[c.item] || '';
+      } else {
+        er.textContent = '·';
+      }
       el.appendChild(er);
     }
     if (c.flagged) {
       el.classList.add('flagged');
       const fm = document.createElement('span');
-      fm.className = 'flag-mark' + (c.echoed ? ' small' : '');
-      fm.textContent = '⚑';
+      fm.className = 'spr spr-flag flag-mark' + (c.echoed ? ' small' : '');
       el.appendChild(fm);
     }
     return;
@@ -468,20 +673,20 @@ function updateCellEl(el, idx) {
 
   let icon = null;
   if (c.item === 'key' && !G.keyFound) {
-    icon = '🗝';
+    icon = 'key';
     el.classList.add('key-cell');
   } else if (c.item === 'hatch' && !G.hatchOpen) {
-    icon = '🚪';
+    icon = itemSprite('hatch');
     el.classList.add(G.keyFound ? 'hatch-cell' : 'hatch-locked');
     el.title = G.keyFound ? 'Otwarty właz — kliknij, aby przejść dalej' : 'Zamknięty właz — potrzebujesz klucza';
-  } else if (c.item === 'potion') { icon = '🧪'; }
-  else if (c.item === 'crystal') { icon = '💎'; }
-  else if (c.item === 'shield') { icon = '🛡'; }
+  } else if (c.item === 'potion' || c.item === 'crystal' || c.item === 'shield') {
+    icon = c.item;
+  }
 
   if (c.number > 0) {
-    el.classList.add('n' + Math.min(c.number, 8));
+    el.classList.add(numberClass(c.number));
     const num = document.createElement('span');
-    num.className = 'cell-num' + (icon ? ' corner' : '');   // przy przedmiocie cyfra idzie w rog
+    num.className = 'cell-num' + (icon ? ' corner' : '') + (c.number >= 10 ? ' two-digit' : '');   // przy przedmiocie cyfra idzie w rog
     num.textContent = c.number;
     el.appendChild(num);
     if (!el.title) el.title = `Suma poziomów wrogów dookoła: ${c.number}`;
@@ -491,8 +696,7 @@ function updateCellEl(el, idx) {
 
   if (icon) {
     const ic = document.createElement('span');
-    ic.className = 'cell-icon' + (c.number > 0 ? '' : ' center');
-    ic.textContent = icon;
+    ic.className = `spr spr-${icon} cell-icon` + (c.number > 0 ? '' : ' center');
     el.appendChild(ic);
   }
 }
@@ -502,28 +706,42 @@ function updateCell(idx) {
   if (el) updateCellEl(el, idx);
 }
 
+// kolor cyfry: 1-8 maja wlasne kolory, wyzsze sumy wpadaja w progi o rosnacym zagrozeniu
+// (od 21 w gore kafelek dodatkowo ciemnieje na czerwono, a od 36 pulsuje)
+const NUMBER_TIERS = [
+  { max: 11, cls: 'nt1' },        // 9-11   zolty
+  { max: 15, cls: 'nt2' },        // 12-15  limonkowy
+  { max: 20, cls: 'nt3' },        // 16-20  indygo
+  { max: 27, cls: 'nt4' },        // 21-27  bialy z czerwona poswiata
+  { max: 35, cls: 'nt5' },        // 28-35  krwawa czerwien na ciemnym tle
+  { max: Infinity, cls: 'nt6' },  // 36+    pulsujace ostrzezenie
+];
+
+function numberClass(n) {
+  if (n <= 8) return 'n' + n;
+  return NUMBER_TIERS.find(t => n <= t.max).cls;
+}
+
 // =====================================================================
 // HUD
 // =====================================================================
 function renderHUD() {
-  // Hearts
+  // serca jako sprite'y (pelne / puste)
   const hr = document.getElementById('hearts-row');
   hr.innerHTML = '';
   for (let i = 0; i < G.maxHp; i++) {
     const h = document.createElement('span');
-    h.className = 'heart' + (i >= G.hp ? ' empty' : '');
-    h.textContent = '❤';
+    h.className = 'heart spr ' + (i >= G.hp ? 'spr-heart_empty empty' : 'spr-heart');
     hr.appendChild(h);
   }
   // ATK
   document.getElementById('atk-val').textContent = G.atk;
-  // Crystals
+  // krysztaly many jako sprite'y (pelne / puste)
   const cr = document.getElementById('crystals-row');
   cr.innerHTML = '';
   for (let i = 0; i < G.maxMp; i++) {
     const c = document.createElement('span');
-    c.className = 'crystal' + (i >= G.mp ? ' empty' : '');
-    c.textContent = '◆';
+    c.className = 'crystal spr ' + (i >= G.mp ? 'spr-mana_empty empty' : 'spr-mana');
     cr.appendChild(c);
   }
   // EXP
@@ -558,12 +776,12 @@ function renderInventory() {
   const ig = document.getElementById('inv-grid');
   ig.innerHTML = '';
   const items = [];
-  if (G.hasShield) items.push({ icon:'🛡', label:'Tarcza Kinetyczna' });
-  if (G.keyFound) items.push({ icon:'🗝', label:'Klucz Sektora' });
+  if (G.hasShield) items.push({ sprite:'shield', label:'Tarcza Kinetyczna' });
+  if (G.keyFound) items.push({ sprite:'key', label:'Klucz Sektora' });
   for (let i = 0; i < 6; i++) {
     const slot = document.createElement('div');
     slot.className = 'inv-slot';
-    if (items[i]) { slot.textContent = items[i].icon; slot.title = items[i].label; }
+    if (items[i]) { slot.innerHTML = Sprites.html(items[i].sprite); slot.title = items[i].label; }
     ig.appendChild(slot);
   }
 }
@@ -592,7 +810,7 @@ function onCellClick(e) {
   if (G.activeSpell === 'flag') { castFlag(idx); return; }
   if (G.activeSpell === 'echo' || G.activeSpell === 'dezint') {
     if (G.firstClick) {
-      addLog('warn', 'Najpierw odkryj pole startowe — Echokacja i Dezintegracja działają od pierwszego ruchu.');
+      addLog('warn', '', 'Najpierw odkryj pole startowe.');
       return;
     }
     if (G.activeSpell === 'echo') castEcho(idx); else castDezint(idx);
@@ -603,11 +821,25 @@ function onCellClick(e) {
   if (c.flagged) return;
 
   // normalne odkrycie pola
+  const wasFirst = G.firstClick;
   if (G.firstClick) {
     ensureSafeStart(idx);
     G.firstClick = false;
   }
   revealCell(idx, true);
+  if (wasFirst) applySonar();
+}
+
+// Sonar Matrycy: po pierwszym ruchu darmowa Echokacja na losowych zakrytych polach
+function applySonar() {
+  const count = G.meta.scan * 2;
+  if (!count) return;
+  const pool = shuffle(G.cells.map((_, i) => i).filter(i => G.cells[i].state === CELL_COVERED && !G.cells[i].echoed));
+  pool.slice(0, count).forEach(i => {
+    G.cells[i].echoed = true;
+    updateCell(i);
+  });
+  addLog('spell', 'eye', 'Sonar Matrycy', `${Math.min(count, pool.length)} pola`);
 }
 
 function onCellRightClick(e) {
@@ -721,20 +953,17 @@ function revealCell(idx, userTriggered) {
     if (G.hasShield && dmg > 0) {
       G.hasShield = false;
       blockedByShield = true;
-      addLog('warn', `🛡 Tarcza pochłonęła atak ${enemySnapshot.name}!`);
+      addLog('warn', 'shield', `Tarcza zatrzymała: ${enemySnapshot.name}`, '0 :heart:');
     } else if (dmg > 0) {
       G.hp = Math.max(0, G.hp - dmg);
       if (isMimicAmbush) {
-        addLog('damage', `📦 Zasadzka Mimika! Otrzymujesz ${dmg} HP obrażeń!`);
+        addLog('damage', 'mimic', 'Zasadzka Mimika!', `−${dmg} :heart:`);
       } else {
-        addLog('damage', `⚔ Walka: ${enemySnapshot.name} Lv.${enemySnapshot.level} — obrażenia: ${dmg} HP`);
+        addLog('damage', enemySnapshot.type, `${enemySnapshot.name} Lv.${enemySnapshot.level}`, `−${dmg} :heart:`);
       }
-      const portrait = document.getElementById('portrait');
-      portrait.classList.remove('pulse');
-      void portrait.offsetWidth;
-      portrait.classList.add('pulse');
+      // blysk portretu odpala sie w playCombatAnimation, w chwili uderzenia wroga
     } else {
-      addLog('kill', `⚔ Zabito ${enemySnapshot.name} Lv.${enemySnapshot.level} bez obrażeń!`);
+      addLog('kill', enemySnapshot.type, `${enemySnapshot.name} Lv.${enemySnapshot.level}`, `+${enemySnapshot.exp} EXP`);
     }
 
     // przyznanie exp i wyczyszczenie pola
@@ -749,7 +978,7 @@ function revealCell(idx, userTriggered) {
 
     if (G.hp <= 0) {
       G.gameOver = true;   // od razu blokujemy kolejne klikniecia
-      setTimeout(()=>playerDied(), 350);
+      setTimeout(()=>playerDied(), 700);   // ekran smierci dopiero po ciosie, ktory zabil gracza
       return;
     }
   } else {
@@ -764,66 +993,99 @@ function revealCell(idx, userTriggered) {
   checkSectorComplete();
 }
 
+// czas jednej klatki animacji walki (ms)
+const COMBAT_FRAME_MS = 110;
+
+// effectOverride to nazwa sprite'a efektu (np. 'blast' dla Dezintegracji)
+// przebieg: gdy wrog zadaje obrazenia, najpierw gra jego atak (2 klatki, doskok do gracza),
+// w chwili uderzenia odpala sie efekt, wstrzas i tekst, a na koncu wrog gra animacje smierci (3 klatki)
 function playCombatAnimation(idx, enemy, dmg, blockedByShield = false, effectOverride = null) {
   const el = document.querySelector(`.cell[data-idx="${idx}"]`);
   const gridContainer = document.getElementById('grid-container');
   const type = enemy.type || 'slime';
   const isHeavy = dmg >= 2 || enemy.level >= 4;
 
-  if (gridContainer) {
-    gridContainer.classList.remove('flash-damage', 'combat-shake-light', 'combat-shake-heavy', 'combat-shake-brutal');
-    void gridContainer.offsetWidth;
-    if (dmg > 0 && !blockedByShield) {
-      gridContainer.classList.add('flash-damage', isHeavy ? 'combat-shake-brutal' : 'combat-shake-heavy');
-    } else {
-      gridContainer.classList.add('combat-shake-light');
+  // klatki wroga: atak tylko wtedy, gdy wrog faktycznie uderza (rowniez gdy cios przyjmie tarcza)
+  const anim = Sprites.anim(type);
+  const attackFrames = dmg > 0 && !effectOverride ? anim.attack : [];
+  const frames = [...attackFrames, type, ...anim.death];
+  const strikeAt = attackFrames.length * COMBAT_FRAME_MS;
+
+  if (el) {
+    const ghost = document.createElement('div');
+    ghost.className = 'combat-enemy' + (attackFrames.length ? ' lunge' : '');
+    const spr = document.createElement('span');
+    spr.className = 'spr';
+    ghost.appendChild(spr);
+    el.appendChild(ghost);
+    Sprites.animate(spr, frames, COMBAT_FRAME_MS, () => ghost.remove());
+  }
+
+  // moment uderzenia: wstrzas planszy, animacja kafelka, fala, efekt i tekst
+  setTimeout(() => {
+    if (gridContainer) {
+      gridContainer.classList.remove('flash-damage', 'combat-shake-light', 'combat-shake-heavy', 'combat-shake-brutal');
+      void gridContainer.offsetWidth;
+      if (dmg > 0 && !blockedByShield) {
+        gridContainer.classList.add('flash-damage', isHeavy ? 'combat-shake-brutal' : 'combat-shake-heavy');
+      } else {
+        gridContainer.classList.add('combat-shake-light');
+      }
     }
-  }
 
-  if (!el) return;
+    // gracz oberwal: czerwony blysk portretu
+    if (dmg > 0 && !blockedByShield) {
+      const portrait = document.getElementById('portrait');
+      portrait.classList.remove('pulse');
+      void portrait.offsetWidth;
+      portrait.classList.add('pulse');
+    }
 
-  // czyszczenie poprzednich klas animacji kafelka
-  const animClasses = [
-    'combat-hit', 'combat-kill',
-    'anim-slime', 'anim-guardian', 'anim-brutal', 'anim-specter', 'anim-mimic'
-  ];
-  el.classList.remove(...animClasses);
-  void el.offsetWidth;
+    if (!el) return;
 
-  // przypisanie unikalnej klasy dla typu przeciwnika oraz wyniku starcia
-  el.classList.add(`anim-${type}`, dmg > 0 && !blockedByShield ? 'combat-hit' : 'combat-kill');
+    // czyszczenie poprzednich klas animacji kafelka
+    const animClasses = [
+      'combat-hit', 'combat-kill',
+      'anim-slime', 'anim-guardian', 'anim-brutal', 'anim-specter', 'anim-mimic'
+    ];
+    el.classList.remove(...animClasses);
+    void el.offsetWidth;
 
-  // fala uderzeniowa dla silniejszych przeciwnikow (poziom 3+ lub obrazenia > 0)
-  if (enemy.level >= 3 || dmg > 0 || effectOverride) {
-    const ring = document.createElement('div');
-    ring.className = `combat-ring ring-${type}`;
-    el.appendChild(ring);
-    setTimeout(() => ring.remove(), 500);
-  }
+    // przypisanie unikalnej klasy dla typu przeciwnika oraz wyniku starcia
+    el.classList.add(`anim-${type}`, dmg > 0 && !blockedByShield ? 'combat-hit' : 'combat-kill');
 
-  // ikona efektu dopasowana do typu przeciwnika
-  const effectIcons = {
-    slime: '💧',
-    guardian: '⚡',
-    brutal: '🔥',
-    specter: '🌀',
-    mimic: dmg > 0 ? '💢' : '🔓'
-  };
+    // fala uderzeniowa dla silniejszych przeciwnikow (poziom 3+ lub obrazenia > 0)
+    if (enemy.level >= 3 || dmg > 0 || effectOverride) {
+      const ring = document.createElement('div');
+      ring.className = `combat-ring ring-${type}`;
+      el.appendChild(ring);
+      setTimeout(() => ring.remove(), 500);
+    }
 
-  const slash = document.createElement('div');
-  slash.className = `combat-slash slash-${type}`;
-  slash.textContent = blockedByShield ? '🛡' : (effectOverride || effectIcons[type] || '⚔');
-  el.appendChild(slash);
-  setTimeout(() => slash.remove(), 500);
+    // sprite efektu dopasowany do typu przeciwnika
+    const effectSprites = {
+      slime: 'splash',
+      guardian: 'spark',
+      brutal: 'flame',
+      specter: 'vortex',
+      mimic: dmg > 0 ? 'bite' : 'unlock'
+    };
 
-  // unoszacy sie tekst nad kafelkiem
-  if (blockedByShield) {
-    spawnParticle(el, '🛡 -0 HP', '#4fc3f7');
-  } else if (dmg > 0) {
-    spawnParticle(el, `-${dmg} HP`, '#ff5252');
-  } else {
-    spawnParticle(el, `⚔ +${enemy.exp} EXP`, '#66bb6a');
-  }
+    const slash = document.createElement('div');
+    slash.className = `combat-slash slash-${type}`;
+    slash.innerHTML = Sprites.html(blockedByShield ? 'shield' : (effectOverride || effectSprites[type] || 'blast'));
+    el.appendChild(slash);
+    setTimeout(() => slash.remove(), 500);
+
+    // unoszacy sie tekst nad kafelkiem
+    if (blockedByShield) {
+      spawnParticle(el, ':shield: -0 HP', '#4fc3f7');
+    } else if (dmg > 0) {
+      spawnParticle(el, `-${dmg} HP`, '#ff5252');
+    } else {
+      spawnParticle(el, `+${enemy.exp} EXP`, '#66bb6a');
+    }
+  }, strikeAt);
 }
 
 function cascadeReveal(idx) {
@@ -856,7 +1118,7 @@ function setSpell(spell) {
     G.activeSpell = null;
   } else {
     const costs = { flag:1, echo:2, dezint:4 };
-    if (G.mp < costs[spell]) { addLog('warn','Brak many!'); return; }
+    if (G.mp < costs[spell]) { addLog('warn', '', 'Brak many.'); return; }
     G.activeSpell = spell;
   }
   updateSpellButtons();
@@ -869,12 +1131,12 @@ function castFlag(idx) {
     // Remove flag, refund 1 MP
     c.flagged = false;
     G.mp = Math.min(G.maxMp, G.mp + 1);
-    addLog('spell', '⚑ Usunięto Znak Słabości (+1 MP zwrócono)');
+    addLog('spell', 'flag', 'Znak zdjęty', '+1 MP');
   } else {
-    if (G.mp < 1) { addLog('warn','Brak many!'); return; }
+    if (G.mp < 1) { addLog('warn', '', 'Brak many.'); return; }
     G.mp -= 1;
     c.flagged = true;
-    addLog('spell', '⚑ Nałożono Znak Słabości (-1 MP)');
+    addLog('spell', 'flag', 'Znak Słabości', '−1 MP');
   }
   G.activeSpell = null;
   updateSpellButtons();
@@ -885,15 +1147,14 @@ function castFlag(idx) {
 function castEcho(idx) {
   const c = G.cells[idx];
   if (c.state === CELL_REVEALED) return;
-  if (c.echoed) { addLog('info', 'To pole jest już prześwietlone.'); return; }
-  if (G.mp < 2) { addLog('warn','Brak many!'); return; }
+  if (c.echoed) { addLog('info', '', 'Pole już prześwietlone.'); return; }
+  if (G.mp < 2) { addLog('warn', '', 'Brak many.'); return; }
   G.mp -= 2;
   c.echoed = true;
   G.activeSpell = null;
-  const desc = c.content===CONTENT_ENEMY
-    ? `${c.enemy.emoji} ${c.enemy.name} Lv.${c.enemy.level}`
-    : c.item ? `Przedmiot: ${c.item}` : 'Puste pole';
-  addLog('spell', `👁 Echokacja: ${desc} (-2 MP)`);
+  if (c.content === CONTENT_ENEMY) addLog('spell', c.enemy.type, `Echo: ${c.enemy.name} Lv.${c.enemy.level}`, '−2 MP');
+  else if (c.item) addLog('spell', itemSprite(c.item), `Echo: ${ITEM_NAMES[c.item] || c.item}`, '−2 MP');
+  else addLog('spell', 'eye', 'Echo: puste pole', '−2 MP');
   updateSpellButtons();
   updateCell(idx);
   renderHUD();
@@ -902,7 +1163,7 @@ function castEcho(idx) {
 function castDezint(idx) {
   const c = G.cells[idx];
   if (c.state === CELL_REVEALED) return;
-  if (G.mp < 4) { addLog('warn', 'Brak many!'); return; }
+  if (G.mp < 4) { addLog('warn', '', 'Brak many.'); return; }
   G.mp -= 4;
   G.activeSpell = null;
 
@@ -913,21 +1174,21 @@ function castDezint(idx) {
 
   if (c.content === CONTENT_ENEMY) {
     const snap = { ...c.enemy };
-    addLog('spell', `💥 Dezintegracja: ${snap.name} Lv.${snap.level} zniszczony! (+${snap.exp} EXP, -4 MP)`);
+    addLog('spell', 'blast', `Rozbito: ${snap.name} Lv.${snap.level}`, `+${snap.exp} EXP`);
     c.content = CONTENT_EMPTY;
     c.enemy = null;
     gainExp(snap.exp);
     updateSpellButtons();
     renderHUD();
     settleAfterKill(idx);                                  // te same zasady co po zwyklej walce
-    playCombatAnimation(idx, snap, 0, false, '💥');
+    playCombatAnimation(idx, snap, 0, false, 'blast');
     return;
   }
 
-  addLog('spell', '💥 Dezintegracja: pole było bezpieczne. Odsłonięto (-4 MP).');
+  addLog('spell', 'blast', 'Dezintegracja: pusto', '−4 MP');
   if (c.number === 0 && !c.item) cascadeReveal(idx);
   updateCell(idx);
-  spawnParticle(el, '💥 puste pole', '#ff8a65');
+  spawnParticle(el, ':blast: puste pole', '#ff8a65');
   updateSpellButtons();
   renderHUD();
 }
@@ -936,8 +1197,8 @@ function castDezint(idx) {
 function collectKey(idx) {
   G.keyFound = true;
   G.cells[idx].item = null;
-  addLog('item', '🗝 Znaleziono Klucz Sektora! Szukaj włazu.');
-  showOverlay('🗝 KLUCZ ZNALEZIONY!\nSzukaj włazu...', 1200);
+  addLog('item', 'key', 'Klucz Sektora. Szukaj włazu.');
+  showOverlay(':key: KLUCZ ZNALEZIONY!\nSzukaj włazu...', 1200);
   updateCell(idx);
   renderInventory();
 
@@ -953,29 +1214,29 @@ function collectKey(idx) {
 }
 
 function openHatch(idx) {
-  if (!G.keyFound) { addLog('warn','Potrzebujesz klucza!'); return; }
+  if (!G.keyFound) { addLog('warn', 'hatch_locked', 'Właz zamknięty. Potrzebny klucz.'); return; }
   G.hatchOpen = true;
   G.cells[idx].item = null;
-  addLog('item', '🚪 Właz otwarty! Przejście do następnego sektora.');
-  showOverlay(`🚪 SEKTOR UKOŃCZONY!\n+${sectorReward(G.sector)} ✦ Złotych Run`, 1100);
-  setTimeout(()=>nextSector(), 1200);
+  addLog('item', 'hatch_open', 'Właz otwarty', `+${sectorReward(G.sector)} ✦`);
+  showOverlay(`:hatch_open: SEKTOR UKOŃCZONY!\n+${sectorReward(G.sector)} ✦ Złotych Run`, 1100);
+  setTimeout(() => fadeToBlack(() => nextSector()), 900);   // schodzimy w ciemnosc
 }
 
 function collectPotion(idx, type) {
   const c = G.cells[idx];
   if (type === 'potion') {
-    const heal = G.meta.hp ? 2 : 1;
+    const heal = 1 + G.meta.alch;   // Syntezator Alchemiczny: +1 HP leczenia za poziom
     const prev = G.hp;
     G.hp = Math.min(G.maxHp, G.hp + heal);
-    if (G.hp === prev) addLog('item','🧪 HP już pełne.');
-    else addLog('item',`🧪 Mikstura zdrowia: +${G.hp-prev} HP`);
+    if (G.hp === prev) addLog('item', 'potion', 'HP już pełne');
+    else addLog('item', 'potion', 'Mikstura', `+${G.hp - prev} :heart:`);
   } else if (type === 'crystal') {
     const prev = G.mp;
     G.mp = Math.min(G.maxMp, G.mp + 1);
-    addLog('item',`💎 Kryształ Many: +${G.mp-prev} MP`);
+    addLog('item', 'crystal', 'Kryształ Many', `+${G.mp - prev} MP`);
   } else if (type === 'shield') {
     G.hasShield = true;
-    addLog('item','🛡 Tarcza Kinetyczna aktywna!');
+    addLog('item', 'shield', 'Tarcza Kinetyczna aktywna');
   }
   c.item = null;
   updateCell(idx);
@@ -998,12 +1259,12 @@ function levelUp() {
   G.atk = G.baseAtk;
   G.hp = Math.min(G.maxHp, G.hp + 1);
   G.mp = Math.min(G.maxMp, G.mp + 1);
-  addLog('lvlup', `★ POZIOM ${G.level}! ATK +1, +1 HP, +1 MP!`);
+  addLog('lvlup', 'star', `Poziom ${G.level}`, 'ATK +1');
   const portrait = document.getElementById('portrait');
   portrait.classList.remove('levelup');
   void portrait.offsetWidth;
   portrait.classList.add('levelup');
-  showOverlay(`★ AWANS!\nPoziom ${G.level}\nATK: ${G.atk}`, 900);
+  showOverlay(`:star: AWANS!\nPoziom ${G.level}\nATK: ${G.atk}`, 900);
   document.getElementById('atk-val').textContent = G.atk;
 }
 
@@ -1012,8 +1273,8 @@ function checkSectorComplete() {
   // Win by hatch (main path)
 }
 
-// nagroda w Zlotych Runach za ukonczenie sektora
-function sectorReward(sector) { return 20 + sector * 5; }
+// nagroda w Zlotych Runach za ukonczenie sektora: 19, 23, 27 ... 55 (Zlota Zyla: +10% za poziom)
+function sectorReward(sector) { return Math.round((15 + sector * 4) * (1 + 0.10 * G.meta.vein)); }
 
 function nextSector() {
   const cleared = G.sector;
@@ -1026,6 +1287,7 @@ function nextSector() {
     $('ws-level').textContent = G.level;
     $('ws-runes').textContent = G.runes;
     showScreen('win');
+    hideSectorIntro();
     return;
   }
 
@@ -1035,8 +1297,10 @@ function nextSector() {
   } else if (cleared === NODE_AFTER_SECTOR) {
     G.nodeUnlocked = true;          // od teraz wracasz tu po smierci
     showNode('node');
-  } else if (canAffordAnyUpgrade()) {
+    hideSectorIntro();
+  } else if (canAffordAnything()) {
     showNode('shop');               // miedzy sektorami mozna kupic ulepszenia, jesli stac gracza
+    hideSectorIntro();
   } else {
     startSector();
   }
@@ -1076,20 +1340,35 @@ function shuffle(arr) {
   return arr;
 }
 
-function addLog(type, msg) {
+// LOG WALKI: wpis = ikona (nazwa sprite'a lub '') | krotki tekst | wartosc wyrownana do prawej
+// type: info, warn, spell, item, kill, damage, lvlup; w tekscie i wartosci dzialaja tokeny :nazwa: (np. ':heart:')
+const LOG_MAX = 40;
+
+function addLog(type, icon, text, value = '') {
   const log = document.getElementById('combat-log');
   const el = document.createElement('div');
   el.className = 'log-entry ' + type;
-  el.textContent = msg;
+  el.innerHTML =
+    `<span class="log-ico">${icon ? Sprites.html(icon) : '<span class="log-dot"></span>'}</span>` +
+    `<span class="log-text">${Sprites.rich(text)}</span>` +
+    `<span class="log-val">${Sprites.rich(value)}</span>`;
   log.appendChild(el);
-  // Keep max 50 entries
-  while (log.children.length > 50) log.removeChild(log.firstChild);
+  while (log.children.length > LOG_MAX) log.removeChild(log.firstChild);
   log.scrollTop = log.scrollHeight;
+}
+
+// separator z numerem i nazwa sektora; starsze wpisy powoli gasna (CSS)
+function logSector(sector, name) {
+  const log = document.getElementById('combat-log');
+  const el = document.createElement('div');
+  el.className = 'log-sep';
+  el.textContent = `SEKTOR ${sector} · ${name}`;
+  log.appendChild(el);
 }
 
 function showOverlay(msg, duration=1500) {
   const ov = document.getElementById('overlay-msg');
-  ov.textContent = msg;
+  ov.innerHTML = Sprites.rich(msg);
   ov.classList.add('show');
   setTimeout(()=>ov.classList.remove('show'), duration);
 }
@@ -1099,7 +1378,7 @@ function spawnParticle(el, text, color) {
   const rect = el.getBoundingClientRect();
   const p = document.createElement('div');
   p.className = 'particle';
-  p.textContent = text;
+  p.innerHTML = Sprites.rich(text);
   p.style.color = color;
   p.style.left = (rect.left + rect.width/2) + 'px';
   p.style.top = (rect.top) + 'px';
@@ -1121,6 +1400,9 @@ document.addEventListener('keydown', e => {
   else if (key==='Escape') { G.activeSpell=null; updateSpellButtons(); }
 });
 
+// klikniecie w plansze przejscia pomija ja
+document.getElementById('sector-intro').addEventListener('click', hideSectorIntro);
+
 // Prevent context menu everywhere
 document.addEventListener('contextmenu', e=>e.preventDefault());
 
@@ -1140,7 +1422,7 @@ window.addEventListener('resize', ()=>{
 // INIT
 Save.load();
 G.runes = Save.data.runes;
-G.meta = Object.assign({ atk: false, hp: false, arch: false }, Save.data.meta);
+G.meta = migrateMeta(Save.data.meta);
 
 // funkcje wywolywane z atrybutow onclick w index.html
 window.Save = Save;   // dostep dla tutorial.js
@@ -1148,6 +1430,7 @@ window.startGame = startGame;
 window.showTitle = showTitle;
 window.showNode = showNode;
 window.buyUpgrade = buyUpgrade;
+window.buySupply = buySupply;
 window.continueFromNode = continueFromNode;
 window.setSpell = setSpell;
 window.deathPrimary = deathPrimary;

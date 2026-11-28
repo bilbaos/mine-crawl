@@ -5,16 +5,17 @@
 // =====================================================================
 const Tutorial = (() => {
   // ---------- male klocki do budowy ilustracji ----------
+  const S = (name) => Sprites.html(name);   // pixel-artowy sprite wstawiany w tekst
   const covered = (inner = '', extra = '') =>
     `<div class="cell covered ${extra}">${inner}</div>`;
-  const peek = (emoji, lvl) =>   // zakryte pole "prześwietlone" - widac wroga i jego poziom
-    `<div class="cell covered echoed"><span class="echo-reveal" style="opacity:1">${emoji}</span>` +
+  const peek = (sprite, lvl) =>   // zakryte pole "prześwietlone" - widac wroga i jego poziom
+    `<div class="cell covered echoed"><span class="echo-reveal" style="opacity:1">${S(sprite)}</span>` +
     `<span class="demo-lvl">${lvl}</span></div>`;
   const number = (n, extra = '') =>
     `<div class="cell revealed n${n} ${extra}"><span class="cell-num">${n}</span></div>`;
   const blank = () => `<div class="cell revealed"></div>`;
-  const icon = (emoji, extra = '') =>
-    `<div class="cell revealed ${extra}"><span class="cell-icon center">${emoji}</span></div>`;
+  const icon = (sprite, extra = '') =>
+    `<div class="cell revealed ${extra}"><span class="spr spr-${sprite} cell-icon center"></span></div>`;
   const grid = (rows) =>
     `<div class="demo-grid" style="grid-template-columns:repeat(${rows[0].length},var(--cell-size))">` +
     rows.flat().join('') + `</div>`;
@@ -24,20 +25,20 @@ const Tutorial = (() => {
   const steps = [
     {
       title: 'Cel: Klucz i Właz',
-      demo: () => `<div class="demo-row">${icon('🗝', 'key-cell')}<span class="demo-arrow">→</span>${icon('🚪', 'hatch-cell')}</div>`,
-      text: `
+      demo: () => `<div class="demo-row">${icon('key', 'key-cell')}<span class="demo-arrow">→</span>${icon('hatch_open', 'hatch-cell')}</div>`,
+      text: () => `
         <p>Każdy sektor to plansza z <b>zakrytych kafelków</b>. W środku kryją się potwory, skarby oraz dwa ważne przedmioty.</p>
-        <p>Znajdź <b>🗝 Klucz</b>, a potem <b>🚪 Właz</b> i kliknij go, żeby przejść dalej. <b>Nie musisz</b> odkrywać całej planszy.</p>
+        <p>Znajdź <b>${S('key')} Klucz</b>, a potem <b>${S('hatch_open')} Właz</b> i kliknij go, żeby przejść dalej. <b>Nie musisz</b> odkrywać całej planszy.</p>
         <p class="tut-tip">Pierwsze kliknięcie w sektorze jest zawsze bezpieczne.</p>`,
     },
     {
       title: 'Liczby = suma poziomów wrogów',
       demo: () => grid([
-          [peek('🟢', 1), covered(), covered()],
-          [covered(), number(3), peek('🤖', 2)],
+          [peek('slime', 1), covered(), covered()],
+          [covered(), number(3), peek('guardian', 2)],
           [covered(), covered(), covered()],
-        ]) + `<div class="demo-caption">${chip('🟢 1')} + ${chip('🤖 2')} = <b class="n3-text">3</b></div>`,
-      text: `
+        ]) + `<div class="demo-caption">${chip(S('slime') + ' 1')} + ${chip(S('guardian') + ' 2')} = <b class="n3-text">3</b></div>`,
+      text: () => `
         <p>Cyfra na odkrytym polu to <b>suma poziomów</b> wszystkich wrogów, którzy kryją się na <b>8 sąsiednich polach</b> (także po skosie).</p>
         <p>Pole bez cyfry oznacza <b>0 wrogów</b> dookoła. Takie pola same odsłaniają sąsiadów.</p>
         <p class="tut-tip">Gdy pokonasz wroga, cyfry wokół niego zmniejszają się i krótko błyskają. Zawsze pokazują wrogów, którzy wciąż się ukrywają.</p>`,
@@ -45,22 +46,22 @@ const Tutorial = (() => {
     {
       title: 'Walka',
       demo: () => `
-        <div class="demo-fight">${chip('ATK 1', 'atk')} <span class="demo-vs">vs</span> ${chip('🤖 poziom 2')} <span class="demo-arrow">→</span> ${chip('−1 ❤', 'bad')}</div>
-        <div class="demo-fight">${chip('ATK 2', 'atk')} <span class="demo-vs">vs</span> ${chip('🤖 poziom 2')} <span class="demo-arrow">→</span> ${chip('0 obrażeń', 'good')}</div>`,
-      text: `
+        <div class="demo-fight">${chip(S('sword') + ' ATK 1', 'atk')} <span class="demo-vs">vs</span> ${chip(S('guardian') + ' poziom 2')} <span class="demo-arrow">→</span> ${chip('−1 ' + S('heart'), 'bad')}</div>
+        <div class="demo-fight">${chip(S('sword') + ' ATK 2', 'atk')} <span class="demo-vs">vs</span> ${chip(S('guardian') + ' poziom 2')} <span class="demo-arrow">→</span> ${chip('0 obrażeń', 'good')}</div>`,
+      text: () => `
         <p>Kliknięcie zakrytego pola z wrogiem to <b>walka</b>. Obrażenia = <b>poziom wroga − twój ATK</b> (minimum 0).</p>
-        <p>Za każdego pokonanego wroga dostajesz <b>EXP</b>. Awans daje <b>+1 ATK, +1 ❤ i +1 💎</b>. Gdy ❤ spadnie do 0, podejście się kończy.</p>
+        <p>Za każdego pokonanego wroga dostajesz <b>EXP</b>. Awans daje <b>+1 ATK, +1 ${S('heart')} i +1 ${S('mana')}</b>. Gdy ${S('heart')} spadnie do 0, podejście się kończy.</p>
         <p class="tut-tip">Znając cyfry, możesz kliknąć pole, w którym na pewno jest słaby wróg, i wygrać bez strat.</p>`,
     },
     {
-      title: 'Księga Zaklęć (mana 💎)',
+      title: 'Księga Zaklęć (mana)',
       demo: () => `
         <div class="demo-spells">
-          <div class="demo-spell"><span class="ds-ico" style="color:var(--c-flag)">⚑</span><b>Znak Słabości</b><i>1 MP</i><em>PPM lub klawisz 1</em></div>
-          <div class="demo-spell"><span class="ds-ico" style="color:var(--c-echo)">👁</span><b>Echokacja</b><i>2 MP</i><em>klawisz 2</em></div>
-          <div class="demo-spell"><span class="ds-ico" style="color:var(--c-dezint)">💥</span><b>Dezintegracja</b><i>4 MP</i><em>klawisz 3</em></div>
+          <div class="demo-spell"><span class="ds-ico">${S('flag')}</span><b>Znak Słabości</b><i>1 MP</i><em>PPM lub klawisz 1</em></div>
+          <div class="demo-spell"><span class="ds-ico">${S('eye')}</span><b>Echokacja</b><i>2 MP</i><em>klawisz 2</em></div>
+          <div class="demo-spell"><span class="ds-ico">${S('blast')}</span><b>Dezintegracja</b><i>4 MP</i><em>klawisz 3</em></div>
         </div>`,
-      text: `
+      text: () => `
         <p><b>Znak Słabości</b> oznacza podejrzane pole i chroni je przed przypadkowym kliknięciem. Ponowny PPM zdejmuje znak i zwraca 1 MP.</p>
         <p><b>Echokacja</b> bezpiecznie pokazuje, co kryje pole. <b>Dezintegracja</b> niszczy potwora bez walki i bez strat HP.</p>
         <p class="tut-tip">Wybierz zaklęcie (klawisz lub przycisk), potem kliknij zakryte pole. <b>Esc</b> anuluje. Zaklęcia działają od pierwszego ruchu w sektorze.</p>`,
@@ -69,21 +70,21 @@ const Tutorial = (() => {
       title: 'Łupy i zasoby',
       demo: () => `
         <div class="demo-loot">
-          <div>${icon('🧪')}<span>+1 ❤</span></div>
-          <div>${icon('💎')}<span>+1 MP</span></div>
-          <div>${icon('🛡')}<span>tarcza</span></div>
+          <div>${icon('potion')}<span>+1 ${S('heart')}</span></div>
+          <div>${icon('crystal')}<span>+1 MP</span></div>
+          <div>${icon('shield')}<span>tarcza</span></div>
         </div>`,
-      text: `
+      text: () => `
         <p>Przedmioty leżą pod <b>bezpiecznymi</b> polami. Gdy je odkryjesz, <b>kliknij je</b>, żeby podnieść.</p>
-        <p><b>🛡 Tarcza Kinetyczna</b> pochłania obrażenia z najbliższej walki.</p>
+        <p><b>${S('shield')} Tarcza Kinetyczna</b> pochłania obrażenia z najbliższej walki.</p>
         <p class="tut-tip">Na polu z przedmiotem cyfra wrogów dookoła jest w lewym górnym rogu. Nie ginie pod ikoną.</p>`,
     },
     {
       title: 'Mimiki, runy i Węzeł',
-      demo: () => `<div class="demo-row">${peek('📦', 0)}<span class="demo-arrow">→</span>${chip('−1 ❤', 'bad')}</div>`,
-      text: `
-        <p><b>📦 Mimik</b> ma poziom 0, więc nie dodaje nic do cyfr i udaje puste pole. Kliknięty bez Echokacji zabiera 1 ❤. Na każdym sektorze jest ich tylko kilka. Gdy nie masz pewności, użyj Echokacji.</p>
-        <p>Za każdy sektor dostajesz <b>✦ Złote Runy</b>. Między sektorami możesz kupić <b>trwałe ulepszenia</b>, jeśli cię na nie stać.</p>
+      demo: () => `<div class="demo-row">${peek('mimic', 0)}<span class="demo-arrow">→</span>${chip('−1 ' + S('heart'), 'bad')}</div>`,
+      text: () => `
+        <p><b>${S('mimic')} Mimik</b> ma poziom 0, więc nie dodaje nic do cyfr i udaje puste pole. Kliknięty bez Echokacji zabiera 1 ${S('heart')}. Na każdym sektorze jest ich tylko kilka. Gdy nie masz pewności, użyj Echokacji.</p>
+        <p>Za każdy sektor dostajesz <b>${S('rune')} Złote Runy</b>. Między sektorami wydasz je na <b>ulepszenia trwałe</b> (zostają po śmierci) albo na <b>zapasy</b>, które ratują bieżącą wyprawę.</p>
         <p>Po <b>sektorze 5</b> czeka <b>Bezpieczny Węzeł</b>: pełne zdrowie i mana, a w kampanii wracasz tam po śmierci.</p>`,
     },
   ];
@@ -101,7 +102,7 @@ const Tutorial = (() => {
     el('tut-step').textContent = `KROK ${idx + 1} / ${steps.length}`;
     el('tut-title').textContent = s.title;
     el('tut-demo').innerHTML = s.demo();
-    el('tut-text').innerHTML = s.text;
+    el('tut-text').innerHTML = s.text();
     el('tut-dots').innerHTML = steps
       .map((_, i) => `<span class="tut-dot${i === idx ? ' active' : ''}"></span>`)
       .join('');
